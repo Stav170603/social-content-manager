@@ -178,6 +178,27 @@ class ContentVersionIntegrationTests {
     }
 
     @Test
+    void multipartVideoCoverIsAssociatedAndIncludedInVersionSnapshot() throws Exception {
+        MvcResult result = mockMvc.perform(multipart("/contents")
+                        .file(new MockMultipartFile("files", "clip.mp4", "video/mp4", new byte[]{1}))
+                        .file(new MockMultipartFile("coverFiles", "cover.jpg", "image/jpeg", new byte[]{2}))
+                        .param("coverMediaIndexes", "0")
+                        .param("clientId", clientId.toString())
+                        .param("title", "Video with cover")
+                        .param("contentType", "VIDEO")
+                        .cookie(adminCookie))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long contentId = responseId(result);
+        String thumbnail = contentMediaRepository.findByContentId(contentId).get(0).getThumbnailUrl();
+        org.junit.jupiter.api.Assertions.assertTrue(thumbnail.startsWith("/uploads/"));
+        mockMvc.perform(get("/contents/{id}/versions", contentId).cookie(adminCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].media[0].thumbnailUrl").value(thumbnail));
+    }
+
+    @Test
     void multipartCreationPreservesVideoThenImageOrder() throws Exception {
         MvcResult result = mockMvc.perform(multipart("/contents")
                         .file(new MockMultipartFile("files", "first.mp4", "video/mp4", new byte[]{1}))

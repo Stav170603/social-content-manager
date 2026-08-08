@@ -17,3 +17,8 @@ describe('ContentMediaCarousel',()=>{
   expect(screen.queryByRole('button',{name:'המדיה הבאה'})).toBeNull()
  })
 })
+
+it('uses a saved video cover as the playback poster',()=>{
+  render(<ContentMediaCarousel media={[{mediaUrl:'https://cdn.example/video.mp4',mediaType:'VIDEO',thumbnailUrl:'https://cdn.example/cover.jpg'}]} />)
+  expect(document.querySelector('video')?.getAttribute('poster')).toContain('cover.jpg')
+})

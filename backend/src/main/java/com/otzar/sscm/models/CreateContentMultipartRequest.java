@@ -22,6 +22,9 @@ public class CreateContentMultipartRequest {
 
     private MultipartFile file;
     private List<MultipartFile> files = new ArrayList<>();
+    private List<MultipartFile> coverFiles = new ArrayList<>();
+    private List<Integer> coverMediaIndexes = new ArrayList<>();
+    private String videoEditsJson;
 
     public Long getClientId() {
         return clientId;
@@ -75,4 +78,7 @@ public class CreateContentMultipartRequest {
         List<MultipartFile> all=new ArrayList<>(); if(file!=null&&!file.isEmpty()) all.add(file);
         for(MultipartFile item:files) if(item!=null&&!item.isEmpty()) all.add(item); return all;
     }
+    public List<MultipartFile> getCoverFiles(){return coverFiles;} public void setCoverFiles(List<MultipartFile> value){coverFiles=value==null?new ArrayList<>():value;}
+    public List<Integer> getCoverMediaIndexes(){return coverMediaIndexes;} public void setCoverMediaIndexes(List<Integer> value){coverMediaIndexes=value==null?new ArrayList<>():value;}
+    public String getVideoEditsJson(){return videoEditsJson;} public void setVideoEditsJson(String value){videoEditsJson=value;}
 }

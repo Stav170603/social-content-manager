@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FilePlus2, MessageCircle, Users } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import PageShell from '../components/PageShell.jsx'
@@ -15,11 +15,13 @@ import CreationModal from '../components/CreationModal.jsx'
 import ContentMediaCarousel from '../components/ContentMediaCarousel.jsx'
 import SelectedMediaPreview from '../components/SelectedMediaPreview.jsx'
 import ImageEditorModal from '../components/ImageEditorModal.jsx'
+import VideoEditorModal from '../components/VideoEditorModal.jsx'
 import { ActivityIcon, formatRelativeActivityTime, getActivityDesign } from '../components/activityDesign.js'
 import { appendMediaFiles, legacyContentType, mediaAcceptForMode, MIXED_MEDIA_MODE, validateMediaSelection } from '../utils/contentMediaForm.js'
 import { emptyContentFilters, filterContents } from '../utils/contentFilters.js'
 import { normalizeInstagramUsername, normalizeIsraeliPhone, validateClientFields } from '../utils/clientFields.js'
 import { isEditableImage } from '../utils/imageEditor.js'
+import { appendVideoEdits, getVideoEligibility, normalizeSelectedMediaFile } from '../utils/videoEditor.js'
 
 const statusOptions = [
   { value: 'DRAFT', label: 'טיוטה' },
@@ -180,6 +182,9 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
   const [contentDraft, setContentDraft] = useState(null)
   const [replacementMedia, setReplacementMedia] = useState([])
   const [imageEditor, setImageEditor] = useState(null)
+  const [videoEditor, setVideoEditor] = useState(null)
+  const [videoEdits, setVideoEdits] = useState(() => new Map())
+  const videoNormalizationId = useRef(0)
 
   const [loading, setLoading] = useState({
     clients: true,
@@ -693,18 +698,19 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
     const { name, value, files } = event.target
 
     if (name === 'files') {
-      const selected = Array.from(files || [])
+      const selected = Array.from(files || []).map(normalizeSelectedMediaFile)
       const validationMessage = validateMediaSelection(contentForm.media_mode, selected, false)
       if (validationMessage) {
         setErrors((current) => ({ ...current, contents: validationMessage }))
         return
       }
       setErrors((current) => ({ ...current, contents: '' }))
+      setVideoEdits(new Map())
     }
 
     setContentForm((current) => ({
       ...current,
-      [name]: name === 'files' ? Array.from(files || []) : name === 'file' ? files[0] || null : value,
+      [name]: name === 'files' ? Array.from(files || []).map(normalizeSelectedMediaFile) : name === 'file' ? files[0] || null : value,
       ...(name === 'media_mode' ? {
         files: value === 'TEXT' ? [] : current.files,
         content_type: legacyContentType(value, value === 'TEXT' ? [] : current.files),
@@ -735,10 +741,12 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
     }
     if (contentForm.files.length) appendMediaFiles(payload, contentForm.files)
     else if (contentForm.file) payload.append('file', contentForm.file)
+    appendVideoEdits(payload, contentForm.files, videoEdits)
 
     try {
       await api.post('/contents', payload)
       setContentForm(emptyContentForm)
+      setVideoEdits(new Map())
       setShowCreateForm((current) => ({ ...current, contents: false }))
       await loadContents()
       showNotice('התוכן נוצר בהצלחה')
@@ -838,6 +846,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
       plannedPublishDate: toInputDateTime(content.plannedPublishDate),
     })
     setReplacementMedia([])
+    setVideoEdits(new Map())
   }
 
   function handleContentDraftChange(event) {
@@ -869,6 +878,78 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
     setImageEditor(null)
   }
 
+  function openVideoEditor(scope, index, file) {
+    const detection = getVideoEligibility(file)
+    const probe = document.createElement('video')
+    const canPlay = detection.detectedMime ? probe.canPlayType(detection.detectedMime) : ''
+    console.info('[VideoEditor] eligibility', { detectedMime: detection.detectedMime, extension: detection.extension, eligible: detection.eligible, canPlayType: canPlay })
+    if (!detection.eligible) {
+      setErrors((current) => ({ ...current, contents: 'פורמט הווידאו אינו נתמך לעריכה. ניתן לבחור MP4 או MOV.' }))
+      return
+    }
+    const editor = { scope, index, file, normalizationAttempted: false, normalizing: false, normalizationError: '' }
+    setVideoEditor(editor)
+    if (detection.detectedMime === 'video/quicktime' && !canPlay) normalizeVideoForEditor(editor)
+  }
+
+  async function normalizeVideoForEditor(editor = videoEditor) {
+    if (!editor || editor.normalizing || editor.normalizationAttempted) return
+    const requestId = ++videoNormalizationId.current
+    setVideoEditor((current) => current?.file === editor.file ? { ...current, normalizing: true, normalizationError: '' } : current)
+    const form = new FormData()
+    form.append('file', editor.file)
+    let publicId = ''
+    let failureCode = 'VIDEO_NORMALIZATION_UPLOAD_FAILED'
+    try {
+      const { data } = await api.post('/contents/normalize-video', form)
+      publicId = data.publicId
+      failureCode = 'VIDEO_NORMALIZATION_DOWNLOAD_FAILED'
+      const response = await fetch(data.url)
+      if (!response.ok) throw new Error('NORMALIZED_VIDEO_DOWNLOAD_FAILED')
+      const blob = await response.blob()
+      if (!blob.size) throw new Error('NORMALIZED_VIDEO_EMPTY')
+      const base = editor.file.name.replace(/\.[^.]+$/, '') || 'video'
+      const normalizedFile = new File([blob], `${base}-normalized.mp4`, { type: 'video/mp4', lastModified: Date.now() })
+      if (requestId !== videoNormalizationId.current) return
+      const replace = (files) => files.map((item) => item === editor.file ? normalizedFile : item)
+      if (editor.scope === 'create') setContentForm((current) => ({ ...current, files: replace(current.files) }))
+      else setReplacementMedia(replace)
+      setVideoEdits((current) => {
+        if (!current.has(editor.file)) return current
+        const next = new Map(current); next.set(normalizedFile, next.get(editor.file)); next.delete(editor.file); return next
+      })
+      setVideoEditor({ ...editor, file: normalizedFile, normalizationAttempted: true, normalizing: false, normalizationError: '' })
+    } catch (error) {
+      const backendCode = error?.response?.data?.code
+      const code = backendCode || failureCode
+      console.error('[VideoEditor] normalization failed', {
+        code,
+        status: error?.response?.status ?? null,
+        detectedMime: getVideoEligibility(editor.file).detectedMime,
+        extension: getVideoEligibility(editor.file).extension,
+      })
+      if (requestId === videoNormalizationId.current) setVideoEditor((current) => current ? { ...current, normalizationAttempted: true, normalizing: false, normalizationError: 'לא הצלחנו להכין את הסרטון לעריכה. נסו סרטון אחר.' } : current)
+    } finally {
+      if (publicId) {
+        try { await api.delete('/contents/normalize-video', { params: { publicId } }) } catch { /* cleanup is best-effort */ }
+      }
+    }
+  }
+
+  function closeVideoEditor() {
+    videoNormalizationId.current += 1
+    setVideoEditor(null)
+  }
+
+  function saveEditedVideo(value) {
+    setVideoEdits((current) => {
+      const next = new Map(current)
+      next.set(videoEditor.file, value)
+      return next
+    })
+    setVideoEditor(null)
+  }
+
   async function handleUpdateContent(contentId) {
     const payload = {
       clientId: Number(contentDraft.clientId),
@@ -893,6 +974,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
         form.append('contentType', replacementMedia[0].type.startsWith('video/') ? 'VIDEO' : 'IMAGE')
         if (payload.plannedPublishDate) form.append('plannedPublishDate', payload.plannedPublishDate)
         replacementMedia.forEach((file) => form.append('files', file))
+        appendVideoEdits(form, replacementMedia, videoEdits)
         await api.put(`/contents/${contentId}`, form)
       } else {
         await api.put(`/contents/${contentId}`, payload)
@@ -1674,6 +1756,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
                                         <SelectedMediaPreview file={file} alt={`${file.name}, פריט ${index + 1}`} />
                                         <span>{index + 1}. {file.name}</span>
                                         {isEditableImage(file) && <button type="button" className="secondary-button small-button" onClick={() => openImageEditor('replacement', index, file)}>עריכת תמונה</button>}
+                                        {getVideoEligibility(file).eligible && <button type="button" className="secondary-button small-button" onClick={() => openVideoEditor('replacement', index, file)}>עריכת וידאו</button>}
                                         <button type="button" aria-label={`הסרת ${file.name}`} onClick={() => setReplacementMedia((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button>
                                         <button type="button" disabled={index === 0} aria-label={`העברת ${file.name} למעלה`} onClick={() => setReplacementMedia((current) => current.map((item, itemIndex) => itemIndex === index - 1 ? current[index] : itemIndex === index ? current[index - 1] : item))}>↑</button>
                                         <button type="button" disabled={index === replacementMedia.length - 1} aria-label={`העברת ${file.name} למטה`} onClick={() => setReplacementMedia((current) => current.map((item, itemIndex) => itemIndex === index ? current[index + 1] : itemIndex === index + 1 ? current[index] : item))}>↓</button>
@@ -1689,7 +1772,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
                                     type="file"
                                     multiple
                                     accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm,video/quicktime"
-                                    onChange={(event) => setReplacementMedia(Array.from(event.target.files || []).slice(0, 10))}
+                                    onChange={(event) => { setReplacementMedia(Array.from(event.target.files || []).slice(0, 10).map(normalizeSelectedMediaFile)); setVideoEdits(new Map()) }}
                                   />
                                 </label>
                                 <small>{replacementMedia.length}/10 פריטים נבחרו. סדר הרשימה הוא סדר הקרוסלה.</small>
@@ -1903,7 +1986,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
                           <strong>{contentForm.files.length} / 10 פריטי מדיה</strong>
                           {contentForm.files.map((file, index) => <div key={`${file.name}-${file.lastModified}`} draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', String(index))} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
                             event.preventDefault(); const from=Number(event.dataTransfer.getData('text/plain')); setContentForm((current) => { const files=[...current.files]; const [moved]=files.splice(from,1); files.splice(index,0,moved); return {...current,files} })
-                          }}><SelectedMediaPreview file={file} alt={`${file.name}, פריט ${index + 1}`} /><span>{index + 1}. {file.name}</span>{isEditableImage(file) && <button type="button" className="secondary-button small-button" onClick={() => openImageEditor('create', index, file)}>עריכת תמונה</button>}<button type="button" aria-label={`הסרת ${file.name}`} onClick={() => setContentForm((current) => ({...current,files:current.files.filter((_,itemIndex)=>itemIndex!==index)}))}>×</button>
+                          }}><SelectedMediaPreview file={file} alt={`${file.name}, פריט ${index + 1}`} /><span>{index + 1}. {file.name}</span>{isEditableImage(file) && <button type="button" className="secondary-button small-button" onClick={() => openImageEditor('create', index, file)}>עריכת תמונה</button>}{getVideoEligibility(file).eligible && <button type="button" className="secondary-button small-button" onClick={() => openVideoEditor('create', index, file)}>עריכת וידאו</button>}<button type="button" aria-label={`הסרת ${file.name}`} onClick={() => setContentForm((current) => ({...current,files:current.files.filter((_,itemIndex)=>itemIndex!==index)}))}>×</button>
                           <button type="button" aria-label={`הזזת ${file.name} אחורה`} disabled={index===0} onClick={() => setContentForm((current)=>{const files=[...current.files];[files[index-1],files[index]]=[files[index],files[index-1]];return {...current,files}})}>↑</button>
                           <button type="button" aria-label={`הזזת ${file.name} קדימה`} disabled={index===contentForm.files.length-1} onClick={() => setContentForm((current)=>{const files=[...current.files];[files[index+1],files[index]]=[files[index],files[index+1]];return {...current,files}})}>↓</button></div>)}
                         </div>
@@ -2078,6 +2161,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
         />
       )}
       {imageEditor && <ImageEditorModal file={imageEditor.file} onCancel={() => setImageEditor(null)} onSave={saveEditedImage} />}
+      {videoEditor && <VideoEditorModal key={`${videoEditor.file.name}-${videoEditor.file.lastModified}`} file={videoEditor.file} initialValue={videoEdits.get(videoEditor.file)} onCancel={closeVideoEditor} onSave={saveEditedVideo} normalizing={videoEditor.normalizing} externalError={videoEditor.normalizationError} onDecodeFailure={videoEditor.normalizationAttempted ? undefined : () => normalizeVideoForEditor(videoEditor)} />}
       {archiveDialog.clientId !== null && (
         <div className="modal-backdrop" role="presentation">
           <div className="modal-card client-archive-confirmation" role="dialog" aria-modal="true" aria-labelledby="archive-client-dialog-title">

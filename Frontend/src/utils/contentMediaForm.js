@@ -1,3 +1,5 @@
+import { getVideoEligibility } from './videoEditor.js'
+
 export const MIXED_MEDIA_MODE = 'MIXED'
 
 export function mediaAcceptForMode(mode) {
@@ -12,7 +14,7 @@ export function validateMediaSelection(mode, files, requireComplete = true) {
   if (!selected.length && mode !== 'TEXT') return 'יש לבחור לפחות פריט מדיה אחד.'
 
   const imageCount = selected.filter((file) => file.type?.startsWith('image/')).length
-  const videoCount = selected.filter((file) => file.type?.startsWith('video/')).length
+  const videoCount = selected.filter((file) => getVideoEligibility(file).eligible).length
   if (imageCount + videoCount !== selected.length) return 'ניתן להעלות קובצי תמונה או וידאו בלבד.'
   if (mode === 'IMAGE' && videoCount) return 'בסוג תמונה ניתן להעלות תמונות בלבד.'
   if ((mode === 'VIDEO' || mode === 'REEL') && imageCount) return 'בסוג וידאו ניתן להעלות סרטונים בלבד.'

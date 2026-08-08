@@ -7,6 +7,11 @@ import com.otzar.sscm.entities.NotificationType;
 import com.otzar.sscm.entities.ContentMedia;
 import com.otzar.sscm.models.ApiResponse;
 import com.otzar.sscm.models.CreateContentMultipartRequest;
+import com.otzar.sscm.models.VideoEditSpec;
+import com.otzar.sscm.models.NormalizedVideoResult;
+import com.otzar.sscm.models.VideoNormalizationException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.otzar.sscm.models.ContentVersionResponse;
 import com.otzar.sscm.service.AuthService;
 import com.otzar.sscm.service.ContentService;
@@ -33,6 +38,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.validation.Valid;
 import java.io.IOException;
@@ -40,6 +46,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +57,7 @@ import org.slf4j.LoggerFactory;
 public class ContentController {
 
     private static final Logger logger = LoggerFactory.getLogger(ContentController.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final ContentService contentService;
     private final ContentVersionService contentVersionService;
     private final AuthService authService;
@@ -273,22 +283,16 @@ public class ContentController {
             for (int index = 0; index < files.size(); index++) {
                 String contentType = files.get(index).getContentType();
                 logger.info("Create content media part: index={}, detectedType={}", index,
-                        contentType != null && contentType.startsWith("video/") ? "VIDEO" : "IMAGE");
+                        isVideoFile(files.get(index)) ? "VIDEO" : "IMAGE");
             }
-            List<String> urls = fileStorageService.storeAll(files);
+            List<ContentMedia> media = storeMultipartMedia(request, files);
             logger.info("Create content media upload completed: receivedCount={}, uploadedCount={}",
-                    files.size(), urls.size());
-            if (!urls.isEmpty()) {
-                List<ContentMedia> media = new java.util.ArrayList<>();
-                for (int index=0; index<urls.size(); index++) {
-                    ContentMedia item=new ContentMedia(); item.setMediaUrl(urls.get(index));
-                    String mime=files.get(index).getContentType(); item.setMediaType(mime!=null&&mime.startsWith("video/")?"VIDEO":"IMAGE");
-                    item.setDisplayOrder(index); media.add(item);
-                }
-                content.setMedia(media); content.setFile_url(urls.get(0));
+                    files.size(), media.size());
+            if (!media.isEmpty()) {
+                content.setMedia(media); content.setFile_url(media.get(0).getMediaUrl());
                 content.setContent_type(media.get(0).getMediaType());
             }
-        } catch (IllegalArgumentException ex) {
+        } catch (IllegalArgumentException | IllegalStateException ex) {
             return ResponseEntity.badRequest().body(new ApiResponse(false, ex.getMessage()));
         } catch (IOException ex) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -359,6 +363,46 @@ public class ContentController {
         return ResponseEntity.ok(result.getContent());
     }
 
+    @PostMapping(value = "/normalize-video", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> normalizeVideo(@RequestParam("file") MultipartFile file,
+                                            @CookieValue(value = "token", required = false) String token) {
+        Optional<User> user = authService.findUserByToken(token);
+        if (user.isEmpty()) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ApiResponse(false, "Authentication required"));
+        if (!authService.isAdmin(user.get())) return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ApiResponse(false, "Video normalization is restricted"));
+        try {
+            NormalizedVideoResult result = fileStorageService.normalizeVideo(file);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(new ApiResponse(false, exception.getMessage()));
+        } catch (IllegalStateException exception) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(new ApiResponse(false, exception.getMessage()));
+        } catch (VideoNormalizationException exception) {
+            logger.warn("Video normalization failed: code={}, upstreamStatus={}", exception.getCode(), exception.getUpstreamStatus());
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                    "success", false, "code", exception.getCode(), "message", "Video normalization failed"));
+        } catch (IOException | RuntimeException exception) {
+            logger.warn("Video normalization failed: code=VIDEO_NORMALIZATION_TRANSCODE_FAILED, exceptionType={}", exception.getClass().getSimpleName());
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                    "success", false, "code", "VIDEO_NORMALIZATION_TRANSCODE_FAILED", "message", "Video normalization failed"));
+        }
+    }
+
+    @DeleteMapping("/normalize-video")
+    public ResponseEntity<?> deleteNormalizedVideo(@RequestParam("publicId") String publicId,
+                                                   @CookieValue(value = "token", required = false) String token) {
+        Optional<User> user = authService.findUserByToken(token);
+        if (user.isEmpty()) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!authService.isAdmin(user.get())) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        try {
+            fileStorageService.deleteTemporaryVideo(publicId);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(new ApiResponse(false, exception.getMessage()));
+        } catch (IOException | RuntimeException exception) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(new ApiResponse(false, "Temporary video cleanup failed"));
+        }
+    }
+
     @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> updateContentWithMedia(
             @PathVariable Long id,
@@ -377,12 +421,9 @@ public class ContentController {
         try {
             // The persisted content is untouched unless the replacement upload completes.
             List<org.springframework.web.multipart.MultipartFile> files = request.allFiles();
-            List<String> urls = fileStorageService.storeAll(files);
-            if (!urls.isEmpty()) {
-                List<ContentMedia> media=new java.util.ArrayList<>();
-                for(int index=0;index<urls.size();index++) { ContentMedia item=new ContentMedia(); item.setMediaUrl(urls.get(index));
-                    String mime=files.get(index).getContentType(); item.setMediaType(mime!=null&&mime.startsWith("video/")?"VIDEO":"IMAGE"); item.setDisplayOrder(index); media.add(item); }
-                update.setMedia(media); update.setFile_url(urls.get(0)); update.setContent_type(media.get(0).getMediaType());
+            List<ContentMedia> media = storeMultipartMedia(request, files);
+            if (!media.isEmpty()) {
+                update.setMedia(media); update.setFile_url(media.get(0).getMediaUrl()); update.setContent_type(media.get(0).getMediaType());
             }
             ContentOperationResult result = contentService.update(id, update, currentUser.get().getUser_id());
             if (!result.isSuccess()) return ResponseEntity.notFound().build();
@@ -393,6 +434,54 @@ public class ContentController {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                     .body(new ApiResponse(false, "Could not upload replacement media"));
         }
+    }
+
+    private List<ContentMedia> storeMultipartMedia(CreateContentMultipartRequest request,
+                                                    List<org.springframework.web.multipart.MultipartFile> files) throws IOException {
+        List<VideoEditSpec> indexedEdits = new ArrayList<>(Collections.nCopies(files.size(), null));
+        if (request.getVideoEditsJson() != null && !request.getVideoEditsJson().trim().isEmpty()) {
+            try {
+                List<VideoEditSpec> edits = OBJECT_MAPPER.readValue(request.getVideoEditsJson(), new TypeReference<List<VideoEditSpec>>() {});
+                for (VideoEditSpec edit : edits) {
+                    edit.validate();
+                    if (edit.getIndex() >= files.size()) throw new IllegalArgumentException("Invalid video edit media index");
+                    if (!isVideoFile(files.get(edit.getIndex()))) throw new IllegalArgumentException("Video edits can only target video media");
+                    indexedEdits.set(edit.getIndex(), edit);
+                }
+            } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+                throw new IllegalArgumentException("Invalid video edit metadata");
+            }
+        }
+
+        List<String> urls = fileStorageService.storeAll(files, indexedEdits);
+        Map<Integer, String> covers = new HashMap<>();
+        if (request.getCoverFiles().size() != request.getCoverMediaIndexes().size()) {
+            throw new IllegalArgumentException("Video cover files and indexes must match");
+        }
+        for (int coverIndex = 0; coverIndex < request.getCoverFiles().size(); coverIndex++) {
+            int mediaIndex = request.getCoverMediaIndexes().get(coverIndex);
+            if (mediaIndex < 0 || mediaIndex >= files.size()) throw new IllegalArgumentException("Invalid video cover media index");
+            if (!isVideoFile(files.get(mediaIndex))) throw new IllegalArgumentException("A cover can only target video media");
+            covers.put(mediaIndex, fileStorageService.store(request.getCoverFiles().get(coverIndex)));
+        }
+
+        List<ContentMedia> media = new ArrayList<>();
+        for (int index = 0; index < urls.size(); index++) {
+            ContentMedia item = new ContentMedia();
+            item.setMediaUrl(urls.get(index));
+            item.setMediaType(isVideoFile(files.get(index)) ? "VIDEO" : "IMAGE");
+            item.setDisplayOrder(index);
+            item.setThumbnailUrl(covers.get(index));
+            media.add(item);
+        }
+        return media;
+    }
+
+    private boolean isVideoFile(org.springframework.web.multipart.MultipartFile file) {
+        String mime = file.getContentType();
+        if (mime != null && mime.toLowerCase(Locale.ROOT).startsWith("video/")) return true;
+        String name = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase(Locale.ROOT);
+        return name.endsWith(".mp4") || name.endsWith(".m4v") || name.endsWith(".mov");
     }
 
     @DeleteMapping("/{id}")

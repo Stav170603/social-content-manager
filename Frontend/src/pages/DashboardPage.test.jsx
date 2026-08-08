@@ -13,6 +13,14 @@ vi.mock('../components/ImageEditorModal.jsx', () => ({ default: ({ file, onCance
   <button type="button" onClick={onCancel}>ביטול עריכה</button>
   <button type="button" onClick={() => onSave(new File(['edited'], `edited-${file.name}`, { type: file.type }))}>שמירת עריכה</button>
 </section> }))
+vi.mock('../components/VideoEditorModal.jsx', () => ({ default: ({ file, onCancel, onSave, onDecodeFailure, normalizing, externalError }) => <section role="dialog" aria-label="mock-video-editor">
+  <span>{file.name}</span>
+  {normalizing && <span role="status">normalizing-video</span>}
+  {externalError && <span>{externalError}</span>}
+  {onDecodeFailure && <button type="button" onClick={onDecodeFailure}>simulate-decode-failure</button>}
+  <button type="button" onClick={onCancel}>ביטול עריכת וידאו</button>
+  <button type="button" onClick={() => onSave({ edit: { start: 1, end: 5, muted: true }, coverFile: new File(['cover'], 'cover.jpg', { type: 'image/jpeg' }) })}>שמירת עריכת וידאו</button>
+</section> }))
 
 function LocationProbe() {
   const location = useLocation()
@@ -339,6 +347,113 @@ describe('Content image editor upload integration', () => {
       new File(['video'], 'replacement.mp4', { type: 'video/mp4' }),
     ] } })
     expect(within(card).getAllByRole('button', { name: 'עריכת תמונה' })).toHaveLength(1)
+  })
+})
+
+describe('Content video editor upload integration', () => {
+  afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+  it('keeps mixed carousel order and submits indexed trim, mute, and cover metadata', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('probably')
+    mockDashboardData({ clients: [{ client_id: 1, business_name: 'Media Client' }], contents: [] })
+    api.post.mockResolvedValue({ data: {} })
+    const { container } = render(<MemoryRouter initialEntries={['/content']}>
+      <DashboardPage activeRoute="content" routes={{}} onNavigate={vi.fn()} isAuthenticated onLogout={vi.fn()} />
+    </MemoryRouter>)
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/clients'))
+    fireEvent.click(screen.getAllByRole('button', { name: 'יצירת תוכן חדש' })[0])
+    const form = container.querySelector('.creation-modal-dialog form')
+    fireEvent.change(form.elements.clientId, { target: { name: 'clientId', value: '1' } })
+    fireEvent.change(form.elements.title, { target: { name: 'title', value: 'Edited video carousel' } })
+    fireEvent.change(form.elements.media_mode, { target: { name: 'media_mode', value: 'MIXED' } })
+    const image = new File(['image'], 'first.jpg', { type: 'image/jpeg' })
+    const video = new File(['video'], 'second.mp4', { type: 'video/mp4' })
+    fireEvent.change(form.elements.files, { target: { name: 'files', files: [image, video] } })
+    fireEvent.click(screen.getByRole('button', { name: 'עריכת וידאו' }))
+    fireEvent.click(screen.getByRole('button', { name: 'שמירת עריכת וידאו' }))
+    fireEvent.submit(form)
+
+    await waitFor(() => expect(api.post).toHaveBeenCalled())
+    const upload = api.post.mock.calls.find(([url]) => url === '/contents')[1]
+    expect(upload.getAll('files').map((file) => file.name)).toEqual(['first.jpg', 'second.mp4'])
+    expect(JSON.parse(upload.get('videoEditsJson'))).toEqual([{ index: 1, start: 1, end: 5, muted: true }])
+    expect(upload.get('coverMediaIndexes')).toBe('1')
+    expect(upload.get('coverFiles').name).toBe('cover.jpg')
+  })
+
+  it('normalizes an unsupported phone video, replaces only that file, and cleans up the temporary asset', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('')
+    mockDashboardData({ clients: [{ client_id: 1, business_name: 'Media Client' }], contents: [] })
+    api.post.mockImplementation((url) => url === '/contents/normalize-video'
+      ? Promise.resolve({ data: { url: 'https://res.cloudinary.com/test/video/upload/normalized.mp4', publicId: 'sscm-temporary/phone-video' } })
+      : Promise.resolve({ data: {} }))
+    api.delete.mockResolvedValue({ data: {} })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(new Blob(['normalized'], { type: 'video/mp4' })) }))
+
+    const { container } = render(<MemoryRouter initialEntries={['/content']}>
+      <DashboardPage activeRoute="content" routes={{}} onNavigate={vi.fn()} isAuthenticated onLogout={vi.fn()} />
+    </MemoryRouter>)
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/clients'))
+    fireEvent.click(screen.getAllByRole('button', { name: 'יצירת תוכן חדש' })[0])
+    const form = container.querySelector('.creation-modal-dialog form')
+    fireEvent.change(form.elements.media_mode, { target: { name: 'media_mode', value: 'MIXED' } })
+    const image = new File(['image'], 'first.jpg', { type: 'image/jpeg' })
+    const video = new File(['phone-video'], 'phone.mov', { type: 'video/quicktime' })
+    fireEvent.change(form.elements.files, { target: { name: 'files', files: [image, video] } })
+    fireEvent.click(screen.getByRole('button', { name: 'עריכת וידאו' }))
+
+    await waitFor(() => expect(screen.getAllByText('phone-normalized.mp4')).toHaveLength(2))
+    expect(screen.getAllByTestId('selected-preview').map((node) => node.textContent)).toEqual(['first.jpg', 'phone-normalized.mp4'])
+    const normalizationCall = api.post.mock.calls.find(([url]) => url === '/contents/normalize-video')
+    expect(normalizationCall[1].get('file')).toBe(video)
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/contents/normalize-video', { params: { publicId: 'sscm-temporary/phone-video' } }))
+  })
+
+  it('does not clean up the temporary asset before the normalized browser download completes', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('')
+    mockDashboardData({ clients: [{ client_id: 1, business_name: 'Media Client' }], contents: [] })
+    api.post.mockImplementation((url) => url === '/contents/normalize-video'
+      ? Promise.resolve({ data: { url: 'https://res.cloudinary.com/test/video/upload/normalized.mp4', publicId: 'sscm-temporary/pending' } })
+      : Promise.resolve({ data: {} }))
+    api.delete.mockResolvedValue({ data: {} })
+    let finishDownload
+    const pendingBlob = new Promise((resolve) => { finishDownload = resolve })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: () => pendingBlob }))
+
+    const { container } = render(<MemoryRouter initialEntries={['/content']}>
+      <DashboardPage activeRoute="content" routes={{}} onNavigate={vi.fn()} isAuthenticated onLogout={vi.fn()} />
+    </MemoryRouter>)
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/clients'))
+    fireEvent.click(screen.getAllByRole('button', { name: 'יצירת תוכן חדש' })[0])
+    const form = container.querySelector('.creation-modal-dialog form')
+    fireEvent.change(form.elements.media_mode, { target: { name: 'media_mode', value: 'VIDEO' } })
+    fireEvent.change(form.elements.files, { target: { name: 'files', files: [new File(['video'], 'phone.mov', { type: 'video/quicktime' })] } })
+    fireEvent.click(screen.getByRole('button', { name: 'עריכת וידאו' }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    expect(api.delete).not.toHaveBeenCalled()
+
+    finishDownload(new Blob(['normalized'], { type: 'video/mp4' }))
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/contents/normalize-video', { params: { publicId: 'sscm-temporary/pending' } }))
+  })
+
+  it('shows a safe error and does not substitute another file when normalization fails', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('')
+    mockDashboardData({ clients: [{ client_id: 1, business_name: 'Media Client' }], contents: [] })
+    api.post.mockRejectedValue(new Error('normalization failed'))
+
+    const { container } = render(<MemoryRouter initialEntries={['/content']}>
+      <DashboardPage activeRoute="content" routes={{}} onNavigate={vi.fn()} isAuthenticated onLogout={vi.fn()} />
+    </MemoryRouter>)
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/clients'))
+    fireEvent.click(screen.getAllByRole('button', { name: 'יצירת תוכן חדש' })[0])
+    const form = container.querySelector('.creation-modal-dialog form')
+    fireEvent.change(form.elements.media_mode, { target: { name: 'media_mode', value: 'VIDEO' } })
+    const video = new File(['phone-video'], 'phone.mov', { type: 'video/quicktime' })
+    fireEvent.change(form.elements.files, { target: { name: 'files', files: [video] } })
+    fireEvent.click(screen.getByRole('button', { name: 'עריכת וידאו' }))
+
+    expect(await screen.findByText('לא הצלחנו להכין את הסרטון לעריכה. נסו סרטון אחר.')).toBeTruthy()
+    expect(screen.getByTestId('selected-preview').textContent).toBe('phone.mov')
   })
 })
 
