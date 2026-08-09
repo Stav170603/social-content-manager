@@ -91,6 +91,24 @@ describe('VideoEditorModal', () => {
     expect(screen.getByText('מכינים את הסרטון לעריכה...')).toBeTruthy()
   })
 
+  it('keeps its object URL alive, accepts direct normalized preview, and records real metadata', () => {
+    const file = new File(['video'], 'iphone.mov', { type: 'video/quicktime' })
+    const { container, rerender } = render(<VideoEditorModal file={file} onCancel={vi.fn()} onSave={vi.fn()} />)
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled()
+
+    rerender(<VideoEditorModal file={file} previewUrl="https://res.cloudinary.com/test/video/upload/normalized.mp4" onCancel={vi.fn()} onSave={vi.fn()} />)
+    const video = container.querySelector('video')
+    expect(video.getAttribute('src')).toBe('https://res.cloudinary.com/test/video/upload/normalized.mp4')
+    expect(video.getAttribute('preload')).toBe('metadata')
+    expect(video.hasAttribute('playsinline')).toBe(true)
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled()
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 12.5 })
+    fireEvent.loadedMetadata(video)
+    expect(screen.getByText('משך סופי: 0:12')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'סיום' }).disabled).toBe(false)
+  })
+
   it('resets trim, audio, ratio, and visual adjustments', () => {
     loadVideo()
     fireEvent.click(screen.getByRole('button', { name: 'בהירות' }))

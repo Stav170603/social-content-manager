@@ -1,6 +1,7 @@
 package com.otzar.sscm.service;
 
 import com.cloudinary.Cloudinary;
+import com.cloudinary.Transformation;
 import com.cloudinary.utils.ObjectUtils;
 import com.otzar.sscm.models.VideoEditSpec;
 import com.otzar.sscm.models.NormalizedVideoResult;
@@ -9,12 +10,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.IOException;
 import java.util.Map;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 
 @Service
 public class CloudinaryStorageClientImpl implements CloudinaryStorageClient {
@@ -22,6 +26,7 @@ public class CloudinaryStorageClientImpl implements CloudinaryStorageClient {
     private final Cloudinary cloudinary;
     private final boolean configured;
 
+    @Autowired
     public CloudinaryStorageClientImpl(
             @Value("${CLOUDINARY_CLOUD_NAME:}") String cloudName,
             @Value("${CLOUDINARY_API_KEY:}") String apiKey,
@@ -34,6 +39,11 @@ public class CloudinaryStorageClientImpl implements CloudinaryStorageClient {
                         "api_secret", apiSecret,
                         "secure", true))
                 : null;
+    }
+
+    CloudinaryStorageClientImpl(Cloudinary cloudinary, boolean configured) {
+        this.cloudinary = cloudinary;
+        this.configured = configured;
     }
 
     @Override
@@ -61,15 +71,19 @@ public class CloudinaryStorageClientImpl implements CloudinaryStorageClient {
     @Override
     public NormalizedVideoResult normalizeVideo(byte[] bytes) throws IOException {
         if (!configured) throw new IllegalStateException("Cloudinary video normalization is not configured");
-        logger.info("Video normalization upload: bytes={}, resourceType=video, optionKeys={}", bytes.length, normalizationOptions().keySet());
+        logger.info("Video normalization upload: bytes={}, configured={}, resourceType=video, folder=sscm-temporary, optionKeys={}",
+                bytes.length, configured, normalizationOptions().keySet());
         final Map<?, ?> result;
         try {
             result = cloudinary.uploader().upload(bytes, normalizationOptions());
-        } catch (RuntimeException exception) {
+        } catch (IOException | RuntimeException exception) {
+            Throwable root = rootCause(exception);
             Integer status = cloudinaryStatus(exception);
-            logger.warn("Video normalization upload failed: cloudinaryStatus={}, code=VIDEO_NORMALIZATION_UPLOAD_FAILED, message={}",
-                    status, safeMessage(exception));
-            throw new VideoNormalizationException("VIDEO_NORMALIZATION_UPLOAD_FAILED", safeMessage(exception), status, exception);
+            String code = uploadFailureCode(exception, status);
+            logger.warn("Video normalization upload failed: code={}, cloudinaryStatus={}, exceptionClass={}, message={}, rootCauseClass={}, rootCauseMessage={}, bytes={}, configured={}, resourceType=video, folder=sscm-temporary",
+                    code, status, exception.getClass().getName(), safeMessage(exception), root.getClass().getName(),
+                    safeMessage(root), bytes.length, configured);
+            throw new VideoNormalizationException(code, safeMessage(exception), status, exception);
         }
         String publicId = requiredResult(result, "public_id");
         Object eagerValue = result.get("eager");
@@ -117,8 +131,10 @@ public class CloudinaryStorageClientImpl implements CloudinaryStorageClient {
     }
 
     Map<String, Object> normalizationOptions() {
+        List<Transformation<?>> eagerTransformations = List.of(
+                new Transformation<>().videoCodec("h264").audioCodec("aac").fetchFormat("mp4"));
         return ObjectUtils.asMap("resource_type", "video", "folder", "sscm-temporary",
-                "eager", "vc_h264,ac_aac/f_mp4", "eager_async", false,
+                "eager", eagerTransformations, "eager_async", false,
                 "unique_filename", true, "use_filename", false);
     }
 
@@ -144,17 +160,43 @@ public class CloudinaryStorageClientImpl implements CloudinaryStorageClient {
     }
 
     private Integer cloudinaryStatus(Throwable exception) {
-        try {
-            Object value = exception.getClass().getMethod("getHttpCode").invoke(exception);
-            return value instanceof Number ? ((Number) value).intValue() : null;
-        } catch (ReflectiveOperationException ignored) {
-            return null;
+        for (Throwable current = exception; current != null; current = current.getCause()) {
+            try {
+                Object value = current.getClass().getMethod("getHttpCode").invoke(current);
+                if (value instanceof Number) return ((Number) value).intValue();
+            } catch (ReflectiveOperationException ignored) {
+                // Continue through wrapped SDK/network exceptions.
+            }
         }
+        return null;
     }
 
-    private String safeMessage(Throwable exception) {
+    String safeMessage(Throwable exception) {
         String message = exception.getMessage();
-        return message == null || message.isBlank() ? exception.getClass().getSimpleName() : message.replaceAll("(?i)(api_key|signature|authorization)=[^, &]+", "$1=[redacted]");
+        if (message == null || message.isBlank()) return exception.getClass().getSimpleName();
+        return message
+                .replaceAll("(?i)(api_key|api_secret|signature|authorization|access_token|token)[=:][^, &]+", "$1=[redacted]")
+                .replaceAll("https?://[^\\s,]+", "[url-redacted]");
+    }
+
+    private Throwable rootCause(Throwable exception) {
+        Throwable current = exception;
+        while (current.getCause() != null && current.getCause() != current) current = current.getCause();
+        return current;
+    }
+
+    String uploadFailureCode(Throwable exception, Integer status) {
+        Throwable root = rootCause(exception);
+        String message = (safeMessage(exception) + " " + safeMessage(root)).toLowerCase(java.util.Locale.ROOT);
+        if (message.contains("too large") || message.contains("file size") || message.contains("maximum") || status != null && status == 413) {
+            return "VIDEO_NORMALIZATION_UPLOAD_TOO_LARGE";
+        }
+        if (root instanceof SocketTimeoutException || root instanceof UnknownHostException
+                || root instanceof java.net.ConnectException || message.contains("timed out")) {
+            return "VIDEO_NORMALIZATION_CLOUDINARY_CONNECTION_FAILED";
+        }
+        if (status != null && status >= 400) return "VIDEO_NORMALIZATION_CLOUDINARY_REJECTED";
+        return "VIDEO_NORMALIZATION_UPLOAD_FAILED";
     }
 
     private String upload(byte[] bytes, String resourceType) throws IOException {

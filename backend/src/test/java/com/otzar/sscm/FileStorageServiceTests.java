@@ -20,6 +20,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 class FileStorageServiceTests {
     @TempDir
@@ -145,7 +147,38 @@ class FileStorageServiceTests {
                 "file", "iphone.MOV", "video/quicktime", new byte[]{1, 2, 3});
 
         assertEquals(result, service.normalizeVideo(file));
-        verify(cloudinary).normalizeVideo(any(byte[].class));
+        ArgumentCaptor<byte[]> bytes = ArgumentCaptor.forClass(byte[].class);
+        verify(cloudinary).normalizeVideo(bytes.capture());
+        assertArrayEquals(new byte[]{1, 2, 3}, bytes.getValue());
+    }
+
+    @Test
+    void normalizesMovWithEmptyMimeAndLargeAllowedMp4WithoutConsumingBytes() throws Exception {
+        CloudinaryStorageClient cloudinary = mock(CloudinaryStorageClient.class);
+        when(cloudinary.isConfigured()).thenReturn(true);
+        when(cloudinary.normalizeVideo(any(byte[].class))).thenReturn(new NormalizedVideoResult(
+                "https://example.com/video.mp4", "sscm-temporary/test", "mp4", "h264", "aac"));
+        FileStorageService service = new FileStorageService(cloudinary);
+
+        service.normalizeVideo(new MockMultipartFile("file", "iphone.MOV", "", new byte[]{4, 5}));
+        byte[] large = new byte[2 * 1024 * 1024];
+        large[large.length - 1] = 9;
+        service.normalizeVideo(new MockMultipartFile("file", "large.mp4", "application/octet-stream", large));
+
+        ArgumentCaptor<byte[]> bytes = ArgumentCaptor.forClass(byte[].class);
+        verify(cloudinary, org.mockito.Mockito.times(2)).normalizeVideo(bytes.capture());
+        assertArrayEquals(new byte[]{4, 5}, bytes.getAllValues().get(0));
+        assertArrayEquals(large, bytes.getAllValues().get(1));
+    }
+
+    @Test
+    void rejectsEmptyVideoBeforeCloudinaryCall() throws Exception {
+        CloudinaryStorageClient cloudinary = mock(CloudinaryStorageClient.class);
+        when(cloudinary.isConfigured()).thenReturn(true);
+        FileStorageService service = new FileStorageService(cloudinary);
+        assertThrows(IllegalArgumentException.class, () -> service.normalizeVideo(
+                new MockMultipartFile("file", "empty.mov", "video/quicktime", new byte[0])));
+        verify(cloudinary, never()).normalizeVideo(any(byte[].class));
     }
 
     @Test

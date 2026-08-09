@@ -16,8 +16,9 @@ vi.mock('../components/ImageEditorModal.jsx', () => ({ default: ({ file, onCance
   <button type="button" onClick={onCancel}>ביטול עריכה</button>
   <button type="button" onClick={() => onSave(new File(['edited'], `edited-${file.name}`, { type: file.type }))}>שמירת עריכה</button>
 </section> }))
-vi.mock('../components/VideoEditorModal.jsx', () => ({ default: ({ file, onCancel, onSave, onDecodeFailure, normalizing, externalError }) => <section role="dialog" aria-label="mock-video-editor">
+vi.mock('../components/VideoEditorModal.jsx', () => ({ default: ({ file, previewUrl, onCancel, onSave, onDecodeFailure, normalizing, externalError }) => <section role="dialog" aria-label="mock-video-editor">
   <span>{file.name}</span>
+  {previewUrl && <span data-testid="video-preview-url">{previewUrl}</span>}
   {normalizing && <span role="status">normalizing-video</span>}
   {externalError && <span>{externalError}</span>}
   {onDecodeFailure && <button type="button" onClick={onDecodeFailure}>simulate-decode-failure</button>}
@@ -479,14 +480,13 @@ describe('Content video editor upload integration', () => {
     expect(upload.get('coverFiles').name).toBe('cover.jpg')
   })
 
-  it('normalizes an unsupported phone video, replaces only that file, and cleans up the temporary asset', async () => {
+  it('uses the normalized HTTPS asset for preview without replacing carousel files and cleans up after save', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('')
     mockDashboardData({ clients: [{ client_id: 1, business_name: 'Media Client' }], contents: [] })
     api.post.mockImplementation((url) => url === '/contents/normalize-video'
       ? Promise.resolve({ data: { url: 'https://res.cloudinary.com/test/video/upload/normalized.mp4', publicId: 'sscm-temporary/phone-video' } })
       : Promise.resolve({ data: {} }))
     api.delete.mockResolvedValue({ data: {} })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(new Blob(['normalized'], { type: 'video/mp4' })) }))
 
     const { container } = render(<MemoryRouter initialEntries={['/content']}>
       <DashboardPage activeRoute="content" routes={{}} onNavigate={vi.fn()} isAuthenticated onLogout={vi.fn()} />
@@ -500,23 +500,22 @@ describe('Content video editor upload integration', () => {
     fireEvent.change(form.elements.files, { target: { name: 'files', files: [image, video] } })
     fireEvent.click(screen.getByRole('button', { name: 'עריכת וידאו' }))
 
-    await waitFor(() => expect(screen.getAllByText('phone-normalized.mp4')).toHaveLength(2))
-    expect(screen.getAllByTestId('selected-preview').map((node) => node.textContent)).toEqual(['first.jpg', 'phone-normalized.mp4'])
+    expect((await screen.findByTestId('video-preview-url')).textContent).toBe('https://res.cloudinary.com/test/video/upload/normalized.mp4')
+    expect(screen.getAllByTestId('selected-preview').map((node) => node.textContent)).toEqual(['first.jpg', 'phone.mov'])
     const normalizationCall = api.post.mock.calls.find(([url]) => url === '/contents/normalize-video')
     expect(normalizationCall[1].get('file')).toBe(video)
+    expect(api.delete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'שמירת עריכת וידאו' }))
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/contents/normalize-video', { params: { publicId: 'sscm-temporary/phone-video' } }))
   })
 
-  it('does not clean up the temporary asset before the normalized browser download completes', async () => {
+  it('keeps the temporary direct-preview asset alive until the editor is cancelled', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('')
     mockDashboardData({ clients: [{ client_id: 1, business_name: 'Media Client' }], contents: [] })
     api.post.mockImplementation((url) => url === '/contents/normalize-video'
       ? Promise.resolve({ data: { url: 'https://res.cloudinary.com/test/video/upload/normalized.mp4', publicId: 'sscm-temporary/pending' } })
       : Promise.resolve({ data: {} }))
     api.delete.mockResolvedValue({ data: {} })
-    let finishDownload
-    const pendingBlob = new Promise((resolve) => { finishDownload = resolve })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: () => pendingBlob }))
 
     const { container } = render(<MemoryRouter initialEntries={['/content']}>
       <DashboardPage activeRoute="content" routes={{}} onNavigate={vi.fn()} isAuthenticated onLogout={vi.fn()} />
@@ -527,10 +526,9 @@ describe('Content video editor upload integration', () => {
     fireEvent.change(form.elements.media_mode, { target: { name: 'media_mode', value: 'VIDEO' } })
     fireEvent.change(form.elements.files, { target: { name: 'files', files: [new File(['video'], 'phone.mov', { type: 'video/quicktime' })] } })
     fireEvent.click(screen.getByRole('button', { name: 'עריכת וידאו' }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    await screen.findByTestId('video-preview-url')
     expect(api.delete).not.toHaveBeenCalled()
-
-    finishDownload(new Blob(['normalized'], { type: 'video/mp4' }))
+    fireEvent.click(screen.getByText('ביטול עריכת וידאו'))
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/contents/normalize-video', { params: { publicId: 'sscm-temporary/pending' } }))
   })
 

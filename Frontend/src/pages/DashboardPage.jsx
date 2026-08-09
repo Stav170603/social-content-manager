@@ -896,7 +896,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
       setErrors((current) => ({ ...current, contents: 'פורמט הווידאו אינו נתמך לעריכה. ניתן לבחור MP4 או MOV.' }))
       return
     }
-    const editor = { scope, index, file, normalizationAttempted: false, normalizing: false, normalizationError: '' }
+    const editor = { scope, index, file, previewUrl: '', temporaryPublicId: '', normalizationAttempted: false, normalizing: false, normalizationError: '' }
     setVideoEditor(editor)
     if (detection.detectedMime === 'video/quicktime' && !canPlay) normalizeVideoForEditor(editor)
   }
@@ -907,27 +907,20 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
     setVideoEditor((current) => current?.file === editor.file ? { ...current, normalizing: true, normalizationError: '' } : current)
     const form = new FormData()
     form.append('file', editor.file)
-    let publicId = ''
     let failureCode = 'VIDEO_NORMALIZATION_UPLOAD_FAILED'
     try {
-      const { data } = await api.post('/contents/normalize-video', form)
-      publicId = data.publicId
-      failureCode = 'VIDEO_NORMALIZATION_DOWNLOAD_FAILED'
-      const response = await fetch(data.url)
-      if (!response.ok) throw new Error('NORMALIZED_VIDEO_DOWNLOAD_FAILED')
-      const blob = await response.blob()
-      if (!blob.size) throw new Error('NORMALIZED_VIDEO_EMPTY')
-      const base = editor.file.name.replace(/\.[^.]+$/, '') || 'video'
-      const normalizedFile = new File([blob], `${base}-normalized.mp4`, { type: 'video/mp4', lastModified: Date.now() })
-      if (requestId !== videoNormalizationId.current) return
-      const replace = (files) => files.map((item) => item === editor.file ? normalizedFile : item)
-      if (editor.scope === 'create') setContentForm((current) => ({ ...current, files: replace(current.files) }))
-      else setReplacementMedia(replace)
-      setVideoEdits((current) => {
-        if (!current.has(editor.file)) return current
-        const next = new Map(current); next.set(normalizedFile, next.get(editor.file)); next.delete(editor.file); return next
+      const response = await api.post('/contents/normalize-video', form)
+      const { data } = response
+      if (!data?.url || !data?.publicId) throw new Error('VIDEO_NORMALIZATION_INVALID_RESPONSE')
+      if (requestId !== videoNormalizationId.current) {
+        try { await api.delete('/contents/normalize-video', { params: { publicId: data.publicId } }) } catch { /* cleanup is best-effort */ }
+        return
+      }
+      console.info('[VideoEditor] normalization stage', {
+        stage: 'DIRECT_PREVIEW_READY', extension: getVideoEligibility(editor.file).extension,
+        originalMime: editor.file.type || '', fileSize: editor.file.size, httpStatus: response.status ?? 200,
       })
-      setVideoEditor({ ...editor, file: normalizedFile, normalizationAttempted: true, normalizing: false, normalizationError: '' })
+      setVideoEditor({ ...editor, previewUrl: data.url, temporaryPublicId: data.publicId, normalizationAttempted: true, normalizing: false, normalizationError: '' })
     } catch (error) {
       const backendCode = error?.response?.data?.code
       const code = backendCode || failureCode
@@ -938,15 +931,20 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
         extension: getVideoEligibility(editor.file).extension,
       })
       if (requestId === videoNormalizationId.current) setVideoEditor((current) => current ? { ...current, normalizationAttempted: true, normalizing: false, normalizationError: 'לא הצלחנו להכין את הסרטון לעריכה. נסו סרטון אחר.' } : current)
-    } finally {
-      if (publicId) {
-        try { await api.delete('/contents/normalize-video', { params: { publicId } }) } catch { /* cleanup is best-effort */ }
-      }
     }
+  }
+
+  async function cleanupNormalizedPreview(editor) {
+    if (!editor?.temporaryPublicId) return
+    try {
+      await api.delete('/contents/normalize-video', { params: { publicId: editor.temporaryPublicId } })
+      console.info('[VideoEditor] normalization stage', { stage: 'TEMPORARY_PREVIEW_CLEANED' })
+    } catch { /* cleanup is best-effort */ }
   }
 
   function closeVideoEditor() {
     videoNormalizationId.current += 1
+    cleanupNormalizedPreview(videoEditor)
     setVideoEditor(null)
   }
 
@@ -956,6 +954,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
       next.set(videoEditor.file, value)
       return next
     })
+    cleanupNormalizedPreview(videoEditor)
     setVideoEditor(null)
   }
 
@@ -2170,7 +2169,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
         />
       )}
       {imageEditor && <ImageEditorModal file={imageEditor.file} onCancel={() => setImageEditor(null)} onSave={saveEditedImage} />}
-      {videoEditor && <VideoEditorModal key={`${videoEditor.file.name}-${videoEditor.file.lastModified}`} file={videoEditor.file} initialValue={videoEdits.get(videoEditor.file)} onCancel={closeVideoEditor} onSave={saveEditedVideo} normalizing={videoEditor.normalizing} externalError={videoEditor.normalizationError} onDecodeFailure={videoEditor.normalizationAttempted ? undefined : () => normalizeVideoForEditor(videoEditor)} />}
+      {videoEditor && <VideoEditorModal key={`${videoEditor.file.name}-${videoEditor.file.lastModified}`} file={videoEditor.file} previewUrl={videoEditor.previewUrl} initialValue={videoEdits.get(videoEditor.file)} onCancel={closeVideoEditor} onSave={saveEditedVideo} normalizing={videoEditor.normalizing} externalError={videoEditor.normalizationError} onDecodeFailure={videoEditor.normalizationAttempted ? undefined : () => normalizeVideoForEditor(videoEditor)} />}
       {archiveDialog.clientId !== null && (
         <div className="modal-backdrop" role="presentation">
           <div className="modal-card client-archive-confirmation" role="dialog" aria-modal="true" aria-labelledby="archive-client-dialog-title">

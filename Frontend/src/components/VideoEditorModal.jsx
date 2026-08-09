@@ -20,10 +20,10 @@ function Adjustment({ label, min, max, value, onChange }) {
   </div>
 }
 
-function VideoEditorModal({ file, initialValue, onCancel, onSave, onDecodeFailure, normalizing = false, externalError = '', captureCover = captureVideoCover }) {
+function VideoEditorModal({ file, previewUrl = '', initialValue, onCancel, onSave, onDecodeFailure, normalizing = false, externalError = '', captureCover = captureVideoCover }) {
   const videoRef = useRef(null)
   const normalizationRequested = useRef(false)
-  const [url] = useState(() => URL.createObjectURL(file))
+  const [objectUrl] = useState(() => URL.createObjectURL(file))
   const [duration, setDuration] = useState(0)
   const [start, setStart] = useState(initialValue?.edit?.start || 0)
   const [end, setEnd] = useState(0)
@@ -37,7 +37,7 @@ function VideoEditorModal({ file, initialValue, onCancel, onSave, onDecodeFailur
   const [saving, setSaving] = useState(false)
   const detection = getVideoEligibility(file)
 
-  useEffect(() => () => URL.revokeObjectURL(url), [url])
+  useEffect(() => () => URL.revokeObjectURL(objectUrl), [objectUrl])
 
   function loadMetadata(event) {
     const value = event.currentTarget.duration
@@ -49,10 +49,12 @@ function VideoEditorModal({ file, initialValue, onCancel, onSave, onDecodeFailur
     setError('')
     setDuration(value)
     setEnd(initialValue?.edit?.end ?? value)
-    console.info('[VideoEditor] metadata', { detectedMime: detection.detectedMime, extension: detection.extension, duration: value, eligible: detection.eligible })
+    console.info('[VideoEditor] media stage', { stage: 'VIDEO_METADATA_LOADED', detectedMime: detection.detectedMime, extension: detection.extension, fileSize: file.size, duration: value })
   }
 
-  function metadataError() {
+  function metadataError(event) {
+    const mediaError = event.currentTarget.error
+    console.error('[VideoEditor] media stage', { stage: mediaError?.code === 3 ? 'VIDEO_DECODE_FAILED' : 'VIDEO_METADATA_FAILED', detectedMime: detection.detectedMime, extension: detection.extension, fileSize: file.size, videoErrorCode: mediaError?.code ?? null, videoErrorMessage: mediaError?.message || '' })
     if (onDecodeFailure && !normalizationRequested.current) {
       normalizationRequested.current = true
       setError('')
@@ -60,6 +62,10 @@ function VideoEditorModal({ file, initialValue, onCancel, onSave, onDecodeFailur
       return
     }
     setError('הדפדפן אינו יכול לפענח את פורמט הווידאו הזה.')
+  }
+
+  function canPlay(event) {
+    console.info('[VideoEditor] media stage', { stage: 'VIDEO_CAN_PLAY', detectedMime: detection.detectedMime, extension: detection.extension, fileSize: file.size, duration: event.currentTarget.duration })
   }
 
   function seek(value) {
@@ -96,7 +102,7 @@ function VideoEditorModal({ file, initialValue, onCancel, onSave, onDecodeFailur
     <section className="video-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="video-editor-title" dir="rtl">
       <header><button type="button" onClick={onCancel}>ביטול</button><h2 id="video-editor-title">עריכת וידאו</h2><button type="button" className="primary-button" disabled={!duration || saving || normalizing} onClick={save}>{saving ? 'שומר...' : 'סיום'}</button></header>
       <div className={`video-editor-preview ${displayed.vignette ? 'has-vignette' : ''}`} style={{ aspectRatio: ratio, '--video-vignette': displayed.vignette / 100 }}>
-        <video ref={videoRef} src={url} style={previewStyle} controls playsInline muted={muted} onLoadedMetadata={loadMetadata} onError={metadataError} />
+        <video ref={videoRef} src={previewUrl || objectUrl} crossOrigin={previewUrl ? 'anonymous' : undefined} style={previewStyle} controls playsInline preload="metadata" muted={muted} onLoadedMetadata={loadMetadata} onCanPlay={canPlay} onError={metadataError} />
         <button type="button" className="video-editor-original" aria-pressed={showOriginal} onClick={() => setShowOriginal((current) => !current)}>צפייה במקור</button>
       </div>
       {normalizing && <div className="video-normalization-state" role="status"><span className="spinner" aria-hidden="true" />מכינים את הסרטון לעריכה...</div>}

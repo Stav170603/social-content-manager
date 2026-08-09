@@ -147,9 +147,12 @@ public class FileStorageService {
     public NormalizedVideoResult normalizeVideo(MultipartFile file) throws IOException {
         validateVideoFile(file);
         String filename = StringUtils.cleanPath(file.getOriginalFilename() == null ? "" : file.getOriginalFilename());
-        logger.info("Video normalization request: mime={}, extension={}, bytes={}", file.getContentType(), getExtension(filename), file.getSize());
+        byte[] bytes = file.getBytes();
+        logger.info("Video normalization request: mime={}, extension={}, multipartBytes={}, cloudinaryBytes={}, configured={}",
+                file.getContentType(), getExtension(filename), file.getSize(), bytes.length,
+                cloudinaryStorageClient.isConfigured());
         if (!cloudinaryStorageClient.isConfigured()) throw new IllegalStateException("Cloudinary video normalization is unavailable");
-        return cloudinaryStorageClient.normalizeVideo(file.getBytes());
+        return cloudinaryStorageClient.normalizeVideo(bytes);
     }
 
     public void deleteTemporaryVideo(String publicId) throws IOException {
