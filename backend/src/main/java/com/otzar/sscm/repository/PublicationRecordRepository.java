@@ -32,6 +32,13 @@ public class PublicationRecordRepository {
                 PublicationRecord.class, id, LockMode.PESSIMISTIC_WRITE));
     }
 
+    public boolean existsByContentId(Long contentId) {
+        Long count = persist.getQuerySession().createQuery(
+                "SELECT COUNT(*) FROM PublicationRecord WHERE contentId = :contentId", Long.class)
+                .setParameter("contentId", contentId).uniqueResult();
+        return count != null && count > 0;
+    }
+
     @Transactional(readOnly = true)
     public List<PublicationRecord> find(Long contentId, Long clientId, PublicationStatus status,
                                         PublishingProviderType provider,

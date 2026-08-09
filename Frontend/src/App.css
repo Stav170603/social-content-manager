@@ -2172,6 +2172,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { background: 
   background: linear-gradient(90deg, #eee5d9 20%, #f8f3ec 38%, #eee5d9 58%);
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.25s infinite linear;
+  pointer-events: none;
 }
 
 .media-error {

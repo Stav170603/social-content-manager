@@ -5,7 +5,10 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import DashboardPage from './DashboardPage.jsx'
 import api from '../services/api.js'
 
-vi.mock('../services/api.js', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }))
+vi.mock('../services/api.js', () => ({
+  default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  getApiErrorMessage: (error, fallback) => error?.response?.data?.message || fallback,
+}))
 vi.mock('../components/PageShell.jsx', () => ({ default: ({ children }) => <main>{children}</main> }))
 vi.mock('../components/SelectedMediaPreview.jsx', () => ({ default: ({ file }) => <span data-testid="selected-preview">{file.name}</span> }))
 vi.mock('../components/ImageEditorModal.jsx', () => ({ default: ({ file, onCancel, onSave }) => <section role="dialog" aria-label="mock-image-editor">
@@ -36,6 +39,97 @@ function mockDashboardData({ role = 'ADMIN', clients = [], contents = [], commen
     return Promise.resolve({ data: [] })
   })
 }
+
+describe('role-aware dashboard startup', () => {
+  afterEach(() => { cleanup(); vi.clearAllMocks() })
+
+  it('does not call ADMIN-only user endpoints during CLIENT startup', async () => {
+    mockDashboardData({ role: 'CLIENT', clients: [{ client_id: 1, business_name: 'Client' }] })
+    render(<MemoryRouter initialEntries={['/content']}>
+      <DashboardPage activeRoute="content" routes={{}} onNavigate={vi.fn()} isAuthenticated onLogout={vi.fn()} />
+    </MemoryRouter>)
+
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/contents'))
+    expect(api.get).toHaveBeenCalledWith('/users/me', { suppressGlobalErrorToast: true })
+    expect(api.get.mock.calls.some(([url]) => url === '/users')).toBe(false)
+    expect(api.get.mock.calls.some(([url]) => url === '/users/social-managers')).toBe(false)
+  })
+
+  it('continues loading ADMIN-only user data for ADMIN startup', async () => {
+    mockDashboardData({ role: 'ADMIN' })
+    render(<MemoryRouter initialEntries={['/content']}>
+      <DashboardPage activeRoute="content" routes={{}} onNavigate={vi.fn()} isAuthenticated onLogout={vi.fn()} />
+    </MemoryRouter>)
+
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/users'))
+    expect(api.get).toHaveBeenCalledWith('/users/social-managers')
+  })
+})
+
+describe('Content Management deletion', () => {
+  afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks() })
+
+  const content = {
+    content_id: 501,
+    clientId: 1,
+    title: 'תוכן למחיקה',
+    description: 'בדיקה',
+    content_type: 'TEXT',
+    status: 'DRAFT',
+  }
+
+  function renderContentPage(role = 'ADMIN', deleteResult = () => Promise.resolve({ status: 204 })) {
+    let serverContents = [content]
+    api.get.mockImplementation((url) => {
+      if (url === '/users/me') return Promise.resolve({ data: { role, id: role === 'ADMIN' ? 1 : 2, clientId: role === 'CLIENT' ? 1 : null } })
+      if (url === '/clients') return Promise.resolve({ data: [{ client_id: 1, business_name: 'לקוח' }] })
+      if (url === '/contents') return Promise.resolve({ data: serverContents })
+      if (url === '/comments') return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+    api.delete.mockImplementation(async () => {
+      const response = await deleteResult()
+      serverContents = []
+      return response
+    })
+    return render(<MemoryRouter initialEntries={['/content']}>
+      <DashboardPage activeRoute="content" routes={{}} onNavigate={vi.fn()} isAuthenticated onLogout={vi.fn()} />
+    </MemoryRouter>)
+  }
+
+  it('shows ADMIN delete, honors confirmation, treats 204 as success, and removes the exact content', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    renderContentPage()
+    const card = (await screen.findByText('תוכן למחיקה')).closest('article')
+    const deleteButton = within(card).getByRole('button', { name: 'מחיקה' })
+
+    fireEvent.click(deleteButton)
+    expect(api.delete).not.toHaveBeenCalled()
+    fireEvent.click(deleteButton)
+
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/contents/501', { suppressGlobalErrorToast: true }))
+    expect(await screen.findByText('תוכן #501 נמחק')).toBeTruthy()
+    expect(screen.queryByText('תוכן למחיקה')).toBeNull()
+  })
+
+  it('keeps content visible and shows the safe backend message when deletion fails', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const failure = () => Promise.reject({ response: { status: 409, data: { message: 'לא ניתן למחוק תוכן שיש לו היסטוריית פרסום.' } } })
+    renderContentPage('ADMIN', failure)
+    const card = (await screen.findByText('תוכן למחיקה')).closest('article')
+    fireEvent.click(within(card).getByRole('button', { name: 'מחיקה' }))
+
+    expect(await screen.findByText('לא ניתן למחוק תוכן שיש לו היסטוריית פרסום.')).toBeTruthy()
+    expect(screen.getByText('תוכן למחיקה')).toBeTruthy()
+  })
+
+  it('does not expose permanent deletion to CLIENT users', async () => {
+    renderContentPage('CLIENT')
+    const card = (await screen.findByText('תוכן למחיקה')).closest('article')
+    expect(within(card).queryByRole('button', { name: 'מחיקה' })).toBeNull()
+    expect(api.delete).not.toHaveBeenCalled()
+  })
+})
 
 describe('Clients Management cards', () => {
   afterEach(() => { cleanup(); vi.clearAllMocks() })

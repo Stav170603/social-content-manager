@@ -36,7 +36,7 @@ function MediaPreview({ path, type, alt = 'תצוגת מדיה', className = '',
       {mediaType === 'video' ? (
         failed
           ? <div className="media-error"><FileText size={28} /><span>לא ניתן לטעון את הווידאו</span><a href={url}>פתיחת הקובץ</a></div>
-          : <video src={url} poster={poster ? getImageUrl(poster) : undefined} controls playsInline preload="metadata" onLoadedData={() => setLoading(false)} onError={() => { setLoading(false); setFailed(true) }} />
+          : <video src={url} poster={poster ? getImageUrl(poster) : undefined} controls playsInline preload="metadata" onLoadedMetadata={() => setLoading(false)} onCanPlay={() => setLoading(false)} onError={() => { setLoading(false); setFailed(true) }} />
       ) : (
         <a href={url} target="_blank" rel="noreferrer noopener">
           <img

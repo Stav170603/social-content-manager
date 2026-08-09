@@ -10,6 +10,10 @@ import com.otzar.sscm.repository.ClientRepository;
 import com.otzar.sscm.repository.CommentRepository;
 import com.otzar.sscm.repository.ContentRepository;
 import com.otzar.sscm.repository.ContentMediaRepository;
+import com.otzar.sscm.repository.ContentVersionMediaRepository;
+import com.otzar.sscm.repository.ContentVersionRepository;
+import com.otzar.sscm.repository.NotificationRepository;
+import com.otzar.sscm.repository.PublicationRecordRepository;
 import com.otzar.sscm.entities.ContentMedia;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,16 +34,28 @@ public class ContentService {
     private final ContentVersionService contentVersionService;
     private final FileStorageService fileStorageService;
     private final ContentMediaRepository contentMediaRepository;
+    private final ContentVersionRepository contentVersionRepository;
+    private final ContentVersionMediaRepository contentVersionMediaRepository;
+    private final NotificationRepository notificationRepository;
+    private final PublicationRecordRepository publicationRecordRepository;
 
     public ContentService(ContentRepository contentRepository, ClientRepository clientRepository,
                           CommentRepository commentRepository, ContentVersionService contentVersionService,
-                          FileStorageService fileStorageService, ContentMediaRepository contentMediaRepository) {
+                          FileStorageService fileStorageService, ContentMediaRepository contentMediaRepository,
+                          ContentVersionRepository contentVersionRepository,
+                          ContentVersionMediaRepository contentVersionMediaRepository,
+                          NotificationRepository notificationRepository,
+                          PublicationRecordRepository publicationRecordRepository) {
         this.contentRepository = contentRepository;
         this.clientRepository = clientRepository;
         this.commentRepository = commentRepository;
         this.contentVersionService = contentVersionService;
         this.fileStorageService = fileStorageService;
         this.contentMediaRepository = contentMediaRepository;
+        this.contentVersionRepository = contentVersionRepository;
+        this.contentVersionMediaRepository = contentVersionMediaRepository;
+        this.notificationRepository = notificationRepository;
+        this.publicationRecordRepository = publicationRecordRepository;
     }
 
     public List<Content> findAll() {
@@ -107,6 +123,7 @@ public class ContentService {
                     content, versionNumber, null, false));
         }
 
+        contentVersionService.createSnapshot(content, changedByUserId, ContentVersionChangeType.EDITED);
         content.setTitle(source.getTitle());
         content.setDescription(source.getDescription());
         content.setContent_type(source.getContentType());
@@ -120,10 +137,11 @@ public class ContentService {
             }
             replaceMedia(restored, restoredMedia);
         } else contentMediaRepository.deleteByContentId(contentId);
-        ContentVersion newVersion = contentVersionService.createSnapshot(
-                restored, changedByUserId, ContentVersionChangeType.EDITED);
+        Integer newVersionNumber = contentVersionService.findHistory(contentId).stream()
+                .map(com.otzar.sscm.models.ContentVersionResponse::getVersionNumber)
+                .max(Integer::compareTo).orElse(null);
         return RestoreContentVersionResult.success(new RestoreContentVersionResponse(
-                restored, versionNumber, newVersion.getVersionNumber(), true));
+                restored, versionNumber, newVersionNumber, true));
     }
 
     @Transactional
@@ -153,7 +171,6 @@ public class ContentService {
         content.setStatus(ContentStatus.DRAFT);
         Content created = contentRepository.save(content);
         if (content.isMediaProvided()) replaceMedia(created, content.getMedia());
-        contentVersionService.createSnapshot(created, changedByUserId, ContentVersionChangeType.CREATED);
         return ContentOperationResult.success(created);
     }
 
@@ -178,12 +195,15 @@ public class ContentService {
         List<ContentMedia> requestedMedia = request.getMedia();
         validateMedia(requestedMedia, request.isMediaProvided());
         ContentVersionService.ContentState before = contentVersionService.capture(content);
-        applyRequest(content, request);
+        Content proposed = copyComparableContent(content);
+        applyRequest(proposed, request);
 
-        if (!contentVersionService.hasMeaningfulChanges(before, content) && !request.isMediaProvided()) {
+        if (!contentVersionService.hasMeaningfulChanges(before, proposed, requestedMedia, request.isMediaProvided())) {
             return ContentOperationResult.success(content);
         }
 
+        contentVersionService.createSnapshot(content, changedByUserId, ContentVersionChangeType.EDITED);
+        applyRequest(content, request);
         Content updated = contentRepository.save(content);
         if (request.isMediaProvided()) {
             replaceMedia(updated, requestedMedia);
@@ -193,7 +213,6 @@ public class ContentService {
                 contentRepository.save(updated);
             }
         }
-        contentVersionService.createSnapshot(updated, changedByUserId, ContentVersionChangeType.EDITED);
         return ContentOperationResult.success(updated);
     }
 
@@ -209,13 +228,14 @@ public class ContentService {
             if (java.util.Objects.equals(content.getPlannedPublishDate(), plannedPublishDate)) {
                 return content;
             }
+            contentVersionService.createSnapshot(content, changedByUserId, ContentVersionChangeType.SCHEDULED);
             content.setPlannedPublishDate(plannedPublishDate);
             Content updated = contentRepository.save(content);
-            contentVersionService.createSnapshot(updated, changedByUserId, ContentVersionChangeType.SCHEDULED);
             return updated;
         });
     }
 
+    @Transactional
     public boolean delete(Long id) {
         Optional<Content> existingContent = contentRepository.findById(id);
 
@@ -223,6 +243,15 @@ public class ContentService {
             return false;
         }
 
+        if (publicationRecordRepository.existsByContentId(id)) {
+            throw new ContentDeletionBlockedException();
+        }
+
+        notificationRepository.clearRelatedContentId(id);
+        commentRepository.deleteByContentId(id);
+        contentMediaRepository.deleteByContentId(id);
+        contentVersionMediaRepository.deleteByContentId(id);
+        contentVersionRepository.deleteByContentId(id);
         contentRepository.delete(existingContent.get());
         return true;
     }
@@ -310,7 +339,6 @@ public class ContentService {
 
         content.setStatus(newStatus);
         Content updated = contentRepository.save(content);
-        contentVersionService.createSnapshot(updated, changedByUserId, ContentVersionChangeType.STATUS_CHANGED);
         return Optional.of(updated);
     }
 
@@ -376,6 +404,19 @@ public class ContentService {
         if (request.getPlannedPublishDate() != null) {
             content.setPlannedPublishDate(request.getPlannedPublishDate());
         }
+    }
+
+    private Content copyComparableContent(Content source) {
+        Content copy = new Content();
+        copy.setContent_id(source.getContent_id());
+        copy.setClientId(source.getClientId());
+        copy.setTitle(source.getTitle());
+        copy.setDescription(source.getDescription());
+        copy.setFile_url(source.getFile_url());
+        copy.setContent_type(source.getContent_type());
+        copy.setStatus(source.getStatus());
+        copy.setPlannedPublishDate(source.getPlannedPublishDate());
+        return copy;
     }
 
     private Content enrich(Content content) {

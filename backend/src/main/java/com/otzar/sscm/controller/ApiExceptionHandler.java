@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.dao.DataIntegrityViolationException;
+import com.otzar.sscm.service.ContentDeletionBlockedException;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -22,6 +23,15 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(ContentDeletionBlockedException.class)
+    public ResponseEntity<Map<String, Object>> handleContentDeletionBlocked(ContentDeletionBlockedException exception) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("success", false);
+        body.put("code", "CONTENT_HAS_PUBLICATION_HISTORY");
+        body.put("message", exception.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, Object>> handleContentPersistence(DataIntegrityViolationException exception) {
         Map<String, Object> body = new LinkedHashMap<>();

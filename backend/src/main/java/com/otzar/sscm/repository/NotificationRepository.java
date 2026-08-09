@@ -32,4 +32,9 @@ public class NotificationRepository {
                 "UPDATE Notification SET read = true WHERE userId = :userId AND read = false")
                 .setParameter("userId", userId).executeUpdate();
     }
+    public int clearRelatedContentId(Long contentId) {
+        return persist.getQuerySession().createQuery(
+                "UPDATE Notification SET relatedContentId = null WHERE relatedContentId = :contentId")
+                .setParameter("contentId", contentId).executeUpdate();
+    }
 }

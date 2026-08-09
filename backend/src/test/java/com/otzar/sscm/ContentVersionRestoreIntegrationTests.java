@@ -81,7 +81,7 @@ class ContentVersionRestoreIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.changed").value(true))
                 .andExpect(jsonPath("$.restoredFromVersionNumber").value(1))
-                .andExpect(jsonPath("$.newVersionNumber").value(3))
+                .andExpect(jsonPath("$.newVersionNumber").value(2))
                 .andExpect(jsonPath("$.content.title").value("Original title"))
                 .andExpect(jsonPath("$.content.description").value("Original description"))
                 .andExpect(jsonPath("$.content.content_type").value("IMAGE"))
@@ -90,9 +90,9 @@ class ContentVersionRestoreIntegrationTests {
                 .andExpect(jsonPath("$.content.status").value("DRAFT"))
                 .andExpect(jsonPath("$.content.plannedPublishDate").value("2026-09-15T12:30:00"));
 
-        assertEquals(3, contentVersionRepository.findByContentIdOrdered(contentId).size());
-        assertEquals(1L, contentVersionRepository.findByContentIdOrdered(contentId).get(2).getChangedByUserId());
-        assertEquals("EDITED", contentVersionRepository.findByContentIdOrdered(contentId).get(2).getChangeType().name());
+        assertEquals(2, contentVersionRepository.findByContentIdOrdered(contentId).size());
+        assertEquals(1L, contentVersionRepository.findByContentIdOrdered(contentId).get(1).getChangedByUserId());
+        assertEquals("EDITED", contentVersionRepository.findByContentIdOrdered(contentId).get(1).getChangeType().name());
     }
 
     @Test
@@ -152,6 +152,7 @@ class ContentVersionRestoreIntegrationTests {
         for (ContentStatus blockedStatus : List.of(
                 ContentStatus.WAITING_APPROVAL, ContentStatus.APPROVED, ContentStatus.PUBLISHED)) {
             Long contentId = createContent("Blocked " + blockedStatus, "Blocked", "TEXT", null, null);
+            updateContent(contentId, "Blocked edited " + blockedStatus, "Blocked", "TEXT", null, null);
             Content content = contentRepository.findById(contentId).orElseThrow();
             content.setStatus(blockedStatus);
             contentRepository.save(content);
@@ -167,13 +168,15 @@ class ContentVersionRestoreIntegrationTests {
     @Test
     void noOpReturnsUnchangedAndCreatesNoVersion() throws Exception {
         Long contentId = createContent("No-op", "Same", "IMAGE", null, null);
+        updateContent(contentId, "Changed", "Same", "IMAGE", null, null);
+        updateContent(contentId, "No-op", "Same", "IMAGE", null, null);
 
         mockMvc.perform(post("/contents/{contentId}/versions/{version}/restore", contentId, 1)
                         .cookie(adminCookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.changed").value(false))
                 .andExpect(jsonPath("$.newVersionNumber").doesNotExist());
-        assertEquals(1, contentVersionRepository.findByContentIdOrdered(contentId).size());
+        assertEquals(2, contentVersionRepository.findByContentIdOrdered(contentId).size());
     }
 
     @Test
@@ -227,7 +230,7 @@ class ContentVersionRestoreIntegrationTests {
         Content unchanged = contentRepository.findById(contentId).orElseThrow();
         assertEquals("Missing media current", unchanged.getTitle());
         assertEquals("https://example.com/current.txt", unchanged.getFile_url());
-        assertEquals(2, contentVersionRepository.findByContentIdOrdered(contentId).size());
+        assertEquals(1, contentVersionRepository.findByContentIdOrdered(contentId).size());
     }
 
     private Long createContent(String title, String description, String type, String fileUrl,

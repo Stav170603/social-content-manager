@@ -11,6 +11,16 @@ describe('ContentMediaCarousel',()=>{
   expect(document.querySelector('video')?.getAttribute('src')).toContain('two.mp4')
   expect(screen.getByText('2 / 2')).toBeTruthy()
  })
+ it('opens the exact selected carousel video with its own poster',()=>{
+  render(<ContentMediaCarousel alt="Client post" media={[
+   {mediaId:1,mediaUrl:'https://cdn.example/first.jpg',mediaType:'IMAGE'},
+   {mediaId:2,mediaUrl:'https://cdn.example/exact-video.mp4',mediaType:'VIDEO',thumbnailUrl:'https://cdn.example/exact-cover.jpg'},
+  ]}/>)
+  fireEvent.click(screen.getByRole('button',{name:'המדיה הבאה'}))
+  const video=document.querySelector('video')
+  expect(video?.getAttribute('src')).toContain('exact-video.mp4')
+  expect(video?.getAttribute('poster')).toContain('exact-cover.jpg')
+ })
  it('preserves legacy single media without controls',()=>{
   render(<ContentMediaCarousel fallbackUrl="https://cdn.example/legacy.jpg" fallbackType="IMAGE" alt="Legacy"/>)
   expect(screen.getByAltText('Legacy, פריט 1').getAttribute('loading')).toBe('lazy')

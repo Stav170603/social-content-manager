@@ -229,7 +229,7 @@ function ContentVersionHistoryModal({ content, role, onClose, onRestored }) {
           {restoreSuccess && <p className="version-restore-feedback version-restore-success">{restoreSuccess}</p>}
           {loading && <div className="version-history-state"><span className="history-loader" />טוען היסטוריית גרסאות...</div>}
           {!loading && error && <div className="version-history-state version-history-error" role="alert">{error}</div>}
-          {!loading && !error && versions.length === 0 && <div className="version-history-state">עדיין אין גרסאות שמורות לתוכן זה.</div>}
+          {!loading && !error && versions.length === 0 && <div className="version-history-state">אין גרסאות קודמות לתוכן זה</div>}
           {!loading && !error && versions.length > 0 && (
             <>
               <div className="version-comparison-controls">

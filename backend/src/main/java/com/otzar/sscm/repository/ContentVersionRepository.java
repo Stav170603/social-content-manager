@@ -58,4 +58,9 @@ public class ContentVersionRepository {
                 .setParameter("versionNumber", versionNumber)
                 .uniqueResultOptional();
     }
+
+    public int deleteByContentId(Long contentId) {
+        return persist.getQuerySession().createQuery("DELETE FROM ContentVersion WHERE contentId = :contentId")
+                .setParameter("contentId", contentId).executeUpdate();
+    }
 }

@@ -38,4 +38,9 @@ public class CommentRepository {
     public void delete(Comment comment) {
         persist.remove(comment);
     }
+
+    public int deleteByContentId(Long contentId) {
+        return persist.getQuerySession().createQuery("DELETE FROM Comment WHERE contentId = :contentId")
+                .setParameter("contentId", contentId).executeUpdate();
+    }
 }

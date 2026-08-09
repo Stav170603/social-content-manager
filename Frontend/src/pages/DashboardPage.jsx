@@ -7,7 +7,7 @@ import ContentVersionHistoryModal from '../components/ContentVersionHistoryModal
 import CaptionGenerator from '../components/CaptionGenerator.jsx'
 import PublishingRecommendation from '../components/PublishingRecommendation.jsx'
 import { getActivity } from '../api/activity.js'
-import api from '../services/api.js'
+import api, { getApiErrorMessage } from '../services/api.js'
 import EmptyState from '../components/EmptyState.jsx'
 import Skeleton from '../components/Skeleton.jsx'
 import InstagramPublishAction from '../components/InstagramPublishAction.jsx'
@@ -307,13 +307,15 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
     setErrors((current) => ({ ...current, profile: '' }))
 
     try {
-      const response = await api.get('/users/me')
+      const response = await api.get('/users/me', { suppressGlobalErrorToast: true })
       setProfile(response.data)
+      return response.data
     } catch {
       setErrors((current) => ({
         ...current,
         profile: 'לא הצלחנו לטעון את פרטי המשתמש',
       }))
+      return null
     } finally {
       setLoading((current) => ({ ...current, profile: false }))
     }
@@ -414,16 +416,23 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
   useEffect(() => {
     let isMounted = true
 
-    Promise.resolve().then(() => {
+    Promise.resolve().then(async () => {
       if (!isMounted) {
         return
       }
 
-      loadProfile()
-      loadClients()
-      loadUsers()
-      loadContents()
-      loadComments()
+      const loadedProfile = await loadProfile()
+      if (!isMounted || !loadedProfile) return
+      await Promise.all([
+        loadClients(),
+        loadContents(),
+        loadComments(),
+        loadedProfile.role === 'ADMIN' ? loadUsers() : Promise.resolve(),
+      ])
+      if (loadedProfile.role !== 'ADMIN' && isMounted) {
+        setUsers([])
+        setSocialManagers([])
+      }
     })
 
     return () => {
@@ -438,7 +447,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
       setActivityLoading(true)
       setActivityUnavailable(false)
       try {
-        setRecentActivity(await getActivity({ limit: 5, signal: controller.signal }))
+        setRecentActivity(await getActivity({ limit: 5, signal: controller.signal, suppressGlobalErrorToast: true }))
       } catch (requestError) {
         if (requestError?.code !== 'ERR_CANCELED') {
           setRecentActivity([])
@@ -1000,14 +1009,14 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
     setErrors((current) => ({ ...current, contents: '' }))
 
     try {
-      await api.delete(`/contents/${contentId}`)
-      await loadContents()
-      await loadComments()
+      await api.delete(`/contents/${contentId}`, { suppressGlobalErrorToast: true })
+      setContents((current) => current.filter((content) => getContentId(content) !== contentId))
+      await Promise.all([loadContents(), loadComments()])
       showNotice(`תוכן #${contentId} נמחק`)
-    } catch {
+    } catch (requestError) {
       setErrors((current) => ({
         ...current,
-        contents: 'לא הצלחנו למחוק את התוכן',
+        contents: getApiErrorMessage(requestError, 'לא הצלחנו למחוק את התוכן. אפשר לנסות שוב.'),
       }))
     }
   }

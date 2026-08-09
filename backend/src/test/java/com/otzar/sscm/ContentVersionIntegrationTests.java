@@ -58,21 +58,16 @@ class ContentVersionIntegrationTests {
     }
 
     @Test
-    void jsonCreationCreatesVersionOneWithAuthenticatedActor() throws Exception {
+    void jsonCreationCreatesNoHistoricalVersion() throws Exception {
         Long contentId = createJsonContent("JSON version one");
 
         mockMvc.perform(get("/contents/{id}/versions", contentId).cookie(adminCookie))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].versionNumber").value(1))
-                .andExpect(jsonPath("$[0].title").value("JSON version one"))
-                .andExpect(jsonPath("$[0].status").value("DRAFT"))
-                .andExpect(jsonPath("$[0].changedByUserId").value(1))
-                .andExpect(jsonPath("$[0].changeType").value("CREATED"));
+                .andExpect(jsonPath("$", hasSize(0)));
     }
 
     @Test
-    void multipartCreationCreatesVersionOne() throws Exception {
+    void multipartCreationCreatesNoHistoricalVersion() throws Exception {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "version.png", "image/png", new byte[]{1, 2, 3});
 
@@ -88,9 +83,7 @@ class ContentVersionIntegrationTests {
 
         Long contentId = responseId(result);
         List<ContentVersion> history = contentVersionRepository.findByContentIdOrdered(contentId);
-        org.junit.jupiter.api.Assertions.assertEquals(1, history.size());
-        org.junit.jupiter.api.Assertions.assertEquals(1, history.get(0).getVersionNumber());
-        org.junit.jupiter.api.Assertions.assertNotNull(history.get(0).getFileUrl());
+        org.junit.jupiter.api.Assertions.assertTrue(history.isEmpty());
     }
 
     @Test
@@ -158,6 +151,12 @@ class ContentVersionIntegrationTests {
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
         org.junit.jupiter.api.Assertions.assertEquals("IMAGE", response.get("content_type").asText());
         org.junit.jupiter.api.Assertions.assertEquals(media.get(0).getMediaUrl(), response.get("file_url").asText());
+
+        mockMvc.perform(get("/contents/{id}", responseId(result)).cookie(clientCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.media", hasSize(2)))
+                .andExpect(jsonPath("$.media[1].mediaType").value("VIDEO"))
+                .andExpect(jsonPath("$.media[1].mediaUrl").value(media.get(1).getMediaUrl()));
     }
 
     @Test
@@ -193,6 +192,12 @@ class ContentVersionIntegrationTests {
         Long contentId = responseId(result);
         String thumbnail = contentMediaRepository.findByContentId(contentId).get(0).getThumbnailUrl();
         org.junit.jupiter.api.Assertions.assertTrue(thumbnail.startsWith("/uploads/"));
+        Map<String, Object> edit = contentPayload("Video with updated title");
+        edit.put("content_type", "VIDEO");
+        mockMvc.perform(put("/contents/{id}", contentId).cookie(adminCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(edit)))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/contents/{id}/versions", contentId).cookie(adminCookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].media[0].thumbnailUrl").value(thumbnail));
@@ -233,8 +238,81 @@ class ContentVersionIntegrationTests {
                 .andExpect(status().isOk());
 
         List<ContentVersion> history = contentVersionRepository.findByContentIdOrdered(contentId);
-        org.junit.jupiter.api.Assertions.assertEquals(2, history.size());
-        org.junit.jupiter.api.Assertions.assertEquals("EDITED", history.get(1).getChangeType().name());
+        org.junit.jupiter.api.Assertions.assertEquals(1, history.size());
+        org.junit.jupiter.api.Assertions.assertEquals("Original title", history.get(0).getTitle());
+        org.junit.jupiter.api.Assertions.assertEquals("EDITED", history.get(0).getChangeType().name());
+    }
+
+    @Test
+    void descriptionAndWhitespaceNormalizedNoOpAreComparedSemantically() throws Exception {
+        Long contentId = createJsonContent("Semantic title");
+        Map<String, Object> whitespaceOnly = contentPayload("  Semantic   title  ");
+        whitespaceOnly.put("description", "  Version   history test content ");
+        mockMvc.perform(put("/contents/{id}", contentId).cookie(adminCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(whitespaceOnly)))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                contentVersionRepository.findByContentIdOrdered(contentId).isEmpty());
+
+        Map<String, Object> changedDescription = contentPayload("Semantic title");
+        changedDescription.put("description", "A genuinely changed caption");
+        mockMvc.perform(put("/contents/{id}", contentId).cookie(adminCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(changedDescription)))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertEquals(1,
+                contentVersionRepository.findByContentIdOrdered(contentId).size());
+    }
+
+    @Test
+    void mediaIsComparedDeeplyByUrlTypeThumbnailAndDisplayOrder() throws Exception {
+        Map<String, Object> payload = contentPayload("Carousel");
+        payload.put("media", List.of(
+                media("https://example.com/a.jpg", "IMAGE", "https://example.com/a-cover.jpg", 0),
+                media("https://example.com/b.mp4", "VIDEO", "https://example.com/b-cover.jpg", 1)));
+        MvcResult created = mockMvc.perform(post("/contents").cookie(adminCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isCreated()).andReturn();
+        Long contentId = responseId(created);
+
+        mockMvc.perform(put("/contents/{id}", contentId).cookie(adminCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                contentVersionRepository.findByContentIdOrdered(contentId).isEmpty());
+
+        Map<String, Object> changedCover = new LinkedHashMap<>(payload);
+        changedCover.put("media", List.of(
+                media("https://example.com/a.jpg", "IMAGE", "https://example.com/new-cover.jpg", 0),
+                media("https://example.com/b.mp4", "VIDEO", "https://example.com/b-cover.jpg", 1)));
+        mockMvc.perform(put("/contents/{id}", contentId).cookie(adminCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(changedCover)))
+                .andExpect(status().isOk());
+
+        Map<String, Object> reordered = new LinkedHashMap<>(changedCover);
+        reordered.put("media", List.of(
+                media("https://example.com/a.jpg", "IMAGE", "https://example.com/new-cover.jpg", 1),
+                media("https://example.com/b.mp4", "VIDEO", "https://example.com/b-cover.jpg", 0)));
+        mockMvc.perform(put("/contents/{id}", contentId).cookie(adminCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(reordered)))
+                .andExpect(status().isOk());
+
+        Map<String, Object> replacedImage = new LinkedHashMap<>(reordered);
+        replacedImage.put("media", List.of(
+                media("https://example.com/replacement.jpg", "IMAGE", "https://example.com/new-cover.jpg", 1),
+                media("https://example.com/b.mp4", "VIDEO", "https://example.com/b-cover.jpg", 0)));
+        mockMvc.perform(put("/contents/{id}", contentId).cookie(adminCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacedImage)))
+                .andExpect(status().isOk());
+
+        List<ContentVersion> history = contentVersionRepository.findByContentIdOrdered(contentId);
+        org.junit.jupiter.api.Assertions.assertEquals(3, history.size());
     }
 
     @Test
@@ -250,12 +328,12 @@ class ContentVersionIntegrationTests {
                 .andExpect(status().isOk());
 
         List<ContentVersion> history = contentVersionRepository.findByContentIdOrdered(contentId);
-        org.junit.jupiter.api.Assertions.assertEquals(2, history.size());
-        org.junit.jupiter.api.Assertions.assertEquals("SCHEDULED", history.get(1).getChangeType().name());
+        org.junit.jupiter.api.Assertions.assertEquals(1, history.size());
+        org.junit.jupiter.api.Assertions.assertEquals("SCHEDULED", history.get(0).getChangeType().name());
     }
 
     @Test
-    void successfulApprovalAndPublishingTransitionsEachCreateOneVersion() throws Exception {
+    void successfulApprovalAndPublishingTransitionsCreateNoContentVersions() throws Exception {
         Long contentId = createJsonContent("Workflow versions");
 
         mockMvc.perform(put("/contents/{id}/send-for-approval", contentId).cookie(adminCookie))
@@ -266,14 +344,11 @@ class ContentVersionIntegrationTests {
                 .andExpect(status().isOk());
 
         List<ContentVersion> history = contentVersionRepository.findByContentIdOrdered(contentId);
-        org.junit.jupiter.api.Assertions.assertEquals(4, history.size());
-        org.junit.jupiter.api.Assertions.assertEquals("WAITING_APPROVAL", history.get(1).getStatus().name());
-        org.junit.jupiter.api.Assertions.assertEquals(2L, history.get(2).getChangedByUserId());
-        org.junit.jupiter.api.Assertions.assertEquals("PUBLISHED", history.get(3).getStatus().name());
+        org.junit.jupiter.api.Assertions.assertTrue(history.isEmpty());
     }
 
     @Test
-    void rejectionCreatesExactlyOneVersionAndCommentThenResubmissionCreatesOneVersion() throws Exception {
+    void rejectionAndResubmissionCreateNoContentVersionsButKeepComment() throws Exception {
         Long contentId = createJsonContent("Rejected version");
         mockMvc.perform(put("/contents/{id}/send-for-approval", contentId).cookie(adminCookie))
                 .andExpect(status().isOk());
@@ -283,14 +358,22 @@ class ContentVersionIntegrationTests {
                         .content("{\"reason\":\"Please revise the caption\"}"))
                 .andExpect(status().isOk());
 
-        org.junit.jupiter.api.Assertions.assertEquals(3,
+        org.junit.jupiter.api.Assertions.assertEquals(0,
                 contentVersionRepository.findByContentIdOrdered(contentId).size());
         org.junit.jupiter.api.Assertions.assertEquals(1,
                 commentRepository.getCommentsByContentId(contentId).size());
 
+        Map<String, Object> correction = contentPayload("Corrected after rejection");
+        mockMvc.perform(put("/contents/{id}", contentId).cookie(adminCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(correction)))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertEquals(1,
+                contentVersionRepository.findByContentIdOrdered(contentId).size());
+
         mockMvc.perform(put("/contents/{id}/send-for-approval", contentId).cookie(adminCookie))
                 .andExpect(status().isOk());
-        org.junit.jupiter.api.Assertions.assertEquals(4,
+        org.junit.jupiter.api.Assertions.assertEquals(1,
                 contentVersionRepository.findByContentIdOrdered(contentId).size());
     }
 
@@ -305,14 +388,20 @@ class ContentVersionIntegrationTests {
                         .content(objectMapper.writeValueAsString(contentPayload("Unauthorized edit"))))
                 .andExpect(status().isForbidden());
 
-        org.junit.jupiter.api.Assertions.assertEquals(1,
+        org.junit.jupiter.api.Assertions.assertEquals(0,
                 contentVersionRepository.findByContentIdOrdered(contentId).size());
     }
 
     @Test
     void adminAndOwningClientCanViewHistoryInAscendingVersionOrder() throws Exception {
         Long contentId = createJsonContent("Ordered history");
-        mockMvc.perform(put("/contents/{id}/send-for-approval", contentId).cookie(adminCookie))
+        mockMvc.perform(put("/contents/{id}", contentId).cookie(adminCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(contentPayload("Ordered history v2"))))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/contents/{id}", contentId).cookie(adminCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(contentPayload("Ordered history v3"))))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/contents/{id}/versions", contentId).cookie(adminCookie))
@@ -361,6 +450,15 @@ class ContentVersionIntegrationTests {
         payload.put("file_url", "https://example.com/version.jpg");
         payload.put("content_type", "IMAGE");
         return payload;
+    }
+
+    private Map<String, Object> media(String url, String type, String thumbnail, int order) {
+        Map<String, Object> media = new LinkedHashMap<>();
+        media.put("mediaUrl", url);
+        media.put("mediaType", type);
+        media.put("thumbnailUrl", thumbnail);
+        media.put("displayOrder", order);
+        return media;
     }
 
     private Long responseId(MvcResult result) throws Exception {
