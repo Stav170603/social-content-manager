@@ -1910,7 +1910,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
                   closeLabel="סגירת יצירת תוכן"
                   onClose={() => setShowCreateForm((current) => ({ ...current, contents: false }))}
                 >
-                    <form className="entity-form" onSubmit={handleCreateContent}>
+                    <form className="entity-form content-creation-form" onSubmit={handleCreateContent}>
                       <h3 id="create-content-dialog-title">יצירת תוכן</h3>
                       <div className="form-grid">
                         <label>
@@ -1984,11 +1984,11 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
                         </label>
                         <div className="wide-field carousel-file-list" aria-live="polite">
                           <strong>{contentForm.files.length} / 10 פריטי מדיה</strong>
-                          {contentForm.files.map((file, index) => <div key={`${file.name}-${file.lastModified}`} draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', String(index))} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+                          {contentForm.files.map((file, index) => <div className="carousel-file-row" key={`${file.name}-${file.lastModified}`} draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', String(index))} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
                             event.preventDefault(); const from=Number(event.dataTransfer.getData('text/plain')); setContentForm((current) => { const files=[...current.files]; const [moved]=files.splice(from,1); files.splice(index,0,moved); return {...current,files} })
-                          }}><SelectedMediaPreview file={file} alt={`${file.name}, פריט ${index + 1}`} /><span>{index + 1}. {file.name}</span>{isEditableImage(file) && <button type="button" className="secondary-button small-button" onClick={() => openImageEditor('create', index, file)}>עריכת תמונה</button>}{getVideoEligibility(file).eligible && <button type="button" className="secondary-button small-button" onClick={() => openVideoEditor('create', index, file)}>עריכת וידאו</button>}<button type="button" aria-label={`הסרת ${file.name}`} onClick={() => setContentForm((current) => ({...current,files:current.files.filter((_,itemIndex)=>itemIndex!==index)}))}>×</button>
+                          }}><SelectedMediaPreview file={file} alt={`${file.name}, פריט ${index + 1}`} /><span className="carousel-file-name" title={file.name}>{index + 1}. {file.name}</span><div className="carousel-file-actions">{isEditableImage(file) && <button type="button" className="secondary-button small-button carousel-edit-action" onClick={() => openImageEditor('create', index, file)}>עריכת תמונה</button>}{getVideoEligibility(file).eligible && <button type="button" className="secondary-button small-button carousel-edit-action" onClick={() => openVideoEditor('create', index, file)}>עריכת וידאו</button>}<button type="button" aria-label={`הסרת ${file.name}`} onClick={() => setContentForm((current) => ({...current,files:current.files.filter((_,itemIndex)=>itemIndex!==index)}))}>×</button>
                           <button type="button" aria-label={`הזזת ${file.name} אחורה`} disabled={index===0} onClick={() => setContentForm((current)=>{const files=[...current.files];[files[index-1],files[index]]=[files[index],files[index-1]];return {...current,files}})}>↑</button>
-                          <button type="button" aria-label={`הזזת ${file.name} קדימה`} disabled={index===contentForm.files.length-1} onClick={() => setContentForm((current)=>{const files=[...current.files];[files[index+1],files[index]]=[files[index],files[index+1]];return {...current,files}})}>↓</button></div>)}
+                          <button type="button" aria-label={`הזזת ${file.name} קדימה`} disabled={index===contentForm.files.length-1} onClick={() => setContentForm((current)=>{const files=[...current.files];[files[index+1],files[index]]=[files[index],files[index+1]];return {...current,files}})}>↓</button></div></div>)}
                         </div>
                         <label className="wide-field">
                           תיאור

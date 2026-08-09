@@ -74,4 +74,13 @@ describe('CreationModal', () => {
     expect(css).toMatch(/\.creation-modal-dialog\s*>\s*\.entity-form\s*\{[\s\S]*?overflow-y:\s*auto;/)
     expect(css).toContain('max-height: calc(100dvh')
   })
+
+  it('contains the mobile dialog width and safe-area rules without horizontal scrolling', () => {
+    const css = readFileSync('src/App.css', 'utf8')
+    expect(css).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.creation-modal-dialog\s*\{[\s\S]*?width:\s*calc\(100vw - 24px\);[\s\S]*?overflow-x:\s*hidden;/)
+    expect(css).toMatch(/\.content-creation-form\s*\{[\s\S]*?overflow-x:\s*hidden;/)
+    expect(css).toContain('env(safe-area-inset-bottom)')
+    expect(css).toMatch(/\.content-creation-form \.carousel-file-name\s*\{[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/)
+    expect(css).toMatch(/\.content-creation-form \.carousel-file-row\s*\{[\s\S]*?grid-template-columns:\s*64px minmax\(0, 1fr\);/)
+  })
 })

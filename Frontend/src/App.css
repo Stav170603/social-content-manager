@@ -3274,7 +3274,117 @@ input[type="datetime-local"],
 .carousel-file-list > div span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .carousel-file-list .media-preview { width:96px; min-height:72px; flex:0 0 96px; }
 .carousel-file-list .media-preview img,.carousel-file-list .media-preview video { width:100%; height:72px; object-fit:contain; }
+.carousel-file-actions { display:flex; align-items:center; gap:6px; flex:0 0 auto; }
 @media(max-width:640px){.content-media-carousel .media-preview{min-height:180px}.content-media-carousel .media-preview img,.content-media-carousel .media-preview video{max-height:none}}
+
+@media (max-width: 700px) {
+  .creation-modal-overlay {
+    overflow-x: hidden;
+    padding-inline:
+      max(12px, env(safe-area-inset-left))
+      max(12px, env(safe-area-inset-right));
+  }
+
+  .creation-modal-dialog {
+    width: calc(100vw - 24px);
+    max-width: 100%;
+    min-width: 0;
+    max-height: calc(100dvh - max(24px, calc(env(safe-area-inset-top) + env(safe-area-inset-bottom))));
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+
+  .content-creation-form,
+  .content-creation-form .form-grid,
+  .content-creation-form .form-grid > *,
+  .content-creation-form label,
+  .content-creation-form input,
+  .content-creation-form select,
+  .content-creation-form textarea,
+  .content-creation-form button,
+  .content-creation-form .carousel-file-list {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .content-creation-form,
+  .content-creation-form .form-grid,
+  .content-creation-form label,
+  .content-creation-form input,
+  .content-creation-form select,
+  .content-creation-form textarea,
+  .content-creation-form .carousel-file-list {
+    width: 100%;
+  }
+
+  .content-creation-form {
+    overflow-x: hidden;
+    padding: 18px 14px max(32px, calc(env(safe-area-inset-bottom) + 16px));
+  }
+
+  .content-creation-form > h3 {
+    margin-inline: -14px;
+  }
+
+  .content-creation-form .carousel-file-row {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px 10px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    padding: 8px;
+  }
+
+  .content-creation-form .carousel-file-row .media-preview {
+    grid-row: 1 / span 2;
+    width: 64px;
+    min-width: 64px;
+    min-height: 56px;
+    height: 56px;
+    border-radius: 8px;
+  }
+
+  .content-creation-form .carousel-file-row .media-preview img,
+  .content-creation-form .carousel-file-row .media-preview video {
+    width: 64px;
+    height: 56px;
+    min-height: 0;
+    object-fit: cover;
+  }
+
+  .content-creation-form .carousel-file-name {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .content-creation-form .carousel-file-actions {
+    display: flex;
+    grid-column: 2;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .content-creation-form .carousel-file-actions button {
+    width: auto;
+    min-width: 36px;
+    max-width: 100%;
+    flex: 0 1 auto;
+  }
+
+  .content-creation-form .carousel-file-actions .carousel-edit-action {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}
 
 /* Pending approval feed */
 .feed-page { max-width: 935px; margin: 0 auto; width: 100%; padding-bottom: 24px; }
