@@ -1128,6 +1128,7 @@ input:focus-visible {
 .instagram-summary article:hover,.instagram-top-card:hover { transform:translateY(-2px); }
 .instagram-chart { width:100%; height:270px; direction:ltr; }
 .instagram-chart-panel { min-height:350px; }
+.instagram-charts-grid > .instagram-chart-panel:last-child:nth-child(odd) { grid-column:1 / -1; }
 .instagram-top-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
 .instagram-top-card { display:grid; min-width:0; padding:18px; border:1px solid var(--border); border-radius:18px; gap:12px; background:var(--surface); box-shadow:var(--shadow-card); transition:transform .2s ease,box-shadow .2s ease; }
 .instagram-top-card h3,.instagram-top-card p { margin:0; }

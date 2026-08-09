@@ -65,17 +65,26 @@ describe('AnalyticsPage', () => {
     expect(screen.getAllByText('211').length).toBeGreaterThan(0)
   })
   it('shows unavailable instead of inventing zero', async () => {
+    getInstagramAccountInsights.mockResolvedValue({
+      ...account,
+      dailyTrend: [{ date: '2026-07-27', reach: null, views: null, totalInteractions: null }],
+    })
     renderPage()
     await screen.findByText('1,234')
     expect(screen.getAllByText('אין נתונים זמינים לתקופה שנבחרה.').length).toBeGreaterThan(0)
   })
-  it('explains when Meta rejects daily follower-change data', async () => {
+  it('omits the unavailable follower-change trend while preserving other charts and follower count', async () => {
     getInstagramAccountInsights.mockResolvedValue({
       ...account,
       dailyTrendUnavailableReasons: { netFollowerChange: 'META_DAILY_FOLLOWER_CHANGE_UNAVAILABLE' },
     })
     renderPage()
-    expect(await screen.findByText('Meta אינה מספקת נתוני שינוי יומיים בעוקבים עבור החשבון או התקופה הזו.')).toBeTruthy()
+    expect(await screen.findByText('עוקבים')).toBeTruthy()
+    expect(screen.getByText('חשיפה לאורך זמן')).toBeTruthy()
+    expect(screen.getByText('צפיות לאורך זמן')).toBeTruthy()
+    expect(screen.getByText('אינטראקציות לאורך זמן')).toBeTruthy()
+    expect(screen.queryByText('שינוי בעוקבים לאורך זמן')).toBeNull()
+    expect(screen.queryByText('Meta אינה מספקת נתוני שינוי יומיים בעוקבים עבור החשבון או התקופה הזו.')).toBeNull()
   })
   it('updates requests when media filter changes', async () => {
     renderPage(); await screen.findByText('1,234')

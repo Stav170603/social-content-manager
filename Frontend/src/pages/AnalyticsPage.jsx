@@ -169,10 +169,6 @@ function AnalyticsPage(props) {
           <TrendChart data={trend} dataKey="reach" title="חשיפה לאורך זמן" color="#8f6d4f" />
           <TrendChart data={trend} dataKey="views" title="צפיות לאורך זמן" color="#b27468" />
           <TrendChart data={trend} dataKey="totalInteractions" title="אינטראקציות לאורך זמן" color="#617f72" />
-          <TrendChart data={trend} dataKey="netFollowerChange" title="שינוי בעוקבים לאורך זמן" color="#80669d"
-            unavailableMessage={account?.dailyTrendUnavailableReasons?.netFollowerChange === 'META_DAILY_FOLLOWER_CHANGE_UNAVAILABLE'
-              ? 'Meta אינה מספקת נתוני שינוי יומיים בעוקבים עבור החשבון או התקופה הזו.'
-              : undefined} />
         </div>
         <section className="instagram-top-grid">
           <TopCard title="התוכן עם החשיפה הגבוהה ביותר" item={topReach} />
