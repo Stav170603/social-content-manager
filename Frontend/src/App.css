@@ -2505,6 +2505,11 @@ button:disabled,
 .instagram-confirmation {
   position: relative;
 }
+.instagram-confirmation-body { display: grid; min-width: 0; max-width: 100%; gap: 12px; box-sizing: border-box; }
+.instagram-confirmation-body > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.instagram-confirmation-body strong,
+.instagram-confirmation-body p,
+.instagram-confirmation h2 { white-space: normal; overflow-wrap: anywhere; word-break: normal; }
 
 .toast-success {
   border-color: #aac9a5;
@@ -3203,7 +3208,6 @@ input[type="datetime-local"],
 @media (max-width: 640px) {
   .instagram-publish-action,
   .instagram-publish-action .instagram-button { width: 100%; }
-  .instagram-confirmation .modal-actions { display: grid; grid-template-columns: 1fr; }
   .comments-global-search { align-items: stretch; flex-direction: column; }
   .dashboard-client-switcher { align-items: stretch; flex-direction: column; }
   .dashboard-client-switcher select { width: 100%; min-width: 0; }
@@ -3211,7 +3215,7 @@ input[type="datetime-local"],
 }
 
 /* Instagram publish confirmation must remain usable at every viewport height. */
-.modal-backdrop:has(.instagram-confirmation) {
+.instagram-confirmation-backdrop {
   overflow-y: auto;
   padding: clamp(10px, 3vh, 24px);
   overscroll-behavior: contain;
@@ -3287,6 +3291,143 @@ input[type="datetime-local"],
 @media(max-width:640px){.content-media-carousel .media-preview{min-height:180px}.content-media-carousel .media-preview img,.content-media-carousel .media-preview video{max-height:none}}
 
 @media (max-width: 700px) {
+  html.instagram-confirmation-open,
+  html.instagram-confirmation-open body,
+  html.instagram-confirmation-open #root {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .instagram-confirmation-backdrop {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100dvh;
+    max-width: 100vw;
+    max-height: 100dvh;
+    overflow: hidden;
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-right: max(8px, env(safe-area-inset-right));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    padding-left: max(8px, env(safe-area-inset-left));
+    box-sizing: border-box;
+    overscroll-behavior: none;
+    touch-action: pan-y;
+  }
+
+  .instagram-confirmation {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: 100%;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    direction: rtl;
+    text-align: right;
+  }
+
+  .instagram-confirmation > *,
+  .instagram-confirmation-body > *,
+  .instagram-confirmation .content-media-carousel {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .instagram-confirmation-header {
+    position: relative;
+    min-height: 0;
+    padding: 14px 48px 12px;
+    border-bottom: 1px solid var(--border);
+    background: #F4EBDD;
+  }
+
+  .instagram-confirmation h2 {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-size: 1.15rem;
+    line-height: 1.35;
+    text-align: center;
+  }
+
+  .instagram-confirmation-body {
+    min-height: 0;
+    padding: 12px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .instagram-confirmation .media-preview,
+  .instagram-confirmation .media-preview img,
+  .instagram-confirmation .media-preview video {
+    width: auto;
+    height: auto;
+    min-height: 0;
+    max-width: 100%;
+    max-height: 30dvh;
+    margin-inline: auto;
+    object-fit: contain;
+  }
+
+  .instagram-confirmation .media-preview {
+    display: grid;
+    width: 100%;
+    place-items: center;
+  }
+
+  .instagram-confirmation .media-preview a {
+    display: grid;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    place-items: center;
+  }
+
+  .instagram-confirmation-body strong,
+  .instagram-confirmation-body p {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin-block: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  .instagram-confirmation .modal-actions {
+    position: static;
+    display: flex;
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 8px 12px max(8px, env(safe-area-inset-bottom));
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+    overflow: visible;
+  }
+
+  .instagram-confirmation .modal-actions button {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    flex: 0 0 44px;
+    box-sizing: border-box;
+  }
+
   .creation-modal-overlay {
     overflow-x: hidden;
     padding-inline:
@@ -3432,24 +3573,5 @@ input[type="datetime-local"],
 .instagram-settings-feedback.error { color: var(--danger-color); }
 
 @media (max-width: 640px) {
-  .modal-backdrop:has(.instagram-confirmation) { padding: 8px; }
-  .instagram-confirmation {
-    width: calc(100vw - 16px);
-    max-height: calc(100dvh - 16px);
-    padding: 20px 16px;
-  }
-  .instagram-confirmation h2 {
-    margin-inline: -16px;
-    padding-inline: 18px 52px;
-  }
-  .instagram-confirmation .media-preview,
-  .instagram-confirmation .media-preview img,
-  .instagram-confirmation .media-preview video { max-height: 42dvh; }
-  .instagram-confirmation .modal-actions {
-    bottom: -20px;
-    margin-inline: -16px;
-    margin-bottom: -20px;
-    padding: 14px 16px;
-  }
   .instagram-settings-form .btn { width: 100%; }
 }

@@ -41,7 +41,8 @@ export async function publishContentToInstagram(contentId) {
 
 export function getInstagramPublishErrorMessage(error) {
   const status = error?.response?.status
-  const backendMessage = String(error?.response?.data?.message || '').toLowerCase()
+  const safeBackendMessage = String(error?.response?.data?.message || '').trim()
+  const backendMessage = safeBackendMessage.toLowerCase()
   if (status === 401) return 'ההתחברות פגה. יש להתחבר מחדש לפני הפרסום.'
   if (status === 403) return 'רק מנהל מערכת רשאי לפרסם באינסטגרם.'
   if (backendMessage.includes('approved')) return 'ניתן לפרסם באינסטגרם רק תוכן מאושר.'
@@ -51,7 +52,8 @@ export function getInstagramPublishErrorMessage(error) {
   if (backendMessage.includes('token') || backendMessage.includes('oauth')) {
     return 'החיבור ל-Meta פג או אינו תקין. יש לעדכן את הרשאות החשבון.'
   }
-  if (status === 502 || backendMessage.includes('meta') || backendMessage.includes('instagram')) {
+  if (status === 502 && safeBackendMessage) return safeBackendMessage
+  if (backendMessage.includes('meta') || backendMessage.includes('instagram')) {
     return 'הפרסום באינסטגרם נכשל. בדקו את חיבור Meta ונסו שוב.'
   }
   return 'לא הצלחנו לפרסם באינסטגרם. אפשר לנסות שוב בעוד רגע.'

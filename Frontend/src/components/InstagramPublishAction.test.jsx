@@ -50,6 +50,59 @@ describe('InstagramPublishAction', () => {
     expect(screen.getByRole('dialog')).toBeTruthy()
   })
 
+  it('keeps image/video previews and warning inside the responsive body', () => {
+    const { unmount } = renderAction()
+    fireEvent.click(screen.getByRole('button', { name: 'פרסום באינסטגרם' }))
+    expect(document.documentElement.classList.contains('instagram-confirmation-open')).toBe(true)
+    expect(document.querySelector('.instagram-confirmation-body img')).toBeTruthy()
+    expect(screen.getByText(/הפעולה תפרסם פוסט אמיתי/)).toBeTruthy()
+    unmount()
+
+    const video = { ...approvedImage, content_type: 'VIDEO', file_url: 'https://res.cloudinary.com/demo/video/upload/example.mp4' }
+    renderAction({ content: video })
+    fireEvent.click(screen.getByRole('button', { name: 'פרסום באינסטגרם' }))
+    expect(document.querySelector('.instagram-confirmation-body video')).toBeTruthy()
+  })
+
+  it('uses explicit viewport-fit header, scroll body, and action rows', () => {
+    renderAction()
+    fireEvent.click(screen.getByRole('button', { name: 'פרסום באינסטגרם' }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.parentElement.classList.contains('instagram-confirmation-backdrop')).toBe(true)
+    expect(dialog.parentElement.parentElement).toBe(document.body)
+    expect(dialog.classList.contains('instagram-confirmation')).toBe(true)
+    expect(dialog.children[0].classList.contains('instagram-confirmation-header')).toBe(true)
+    expect(dialog.children[1].classList.contains('instagram-confirmation-body')).toBe(true)
+    expect(dialog.children[2].classList.contains('modal-actions')).toBe(true)
+    expect(document.querySelector('.instagram-confirmation-body .content-media-carousel')).toBeTruthy()
+  })
+
+  it('keeps both mobile actions inside the fixed action row', () => {
+    renderAction()
+    fireEvent.click(screen.getByRole('button', { name: 'פרסום באינסטגרם' }))
+
+    const actions = screen.getByRole('dialog').querySelector('.modal-actions')
+    const cancel = screen.getByRole('button', { name: 'ביטול' })
+    const confirm = screen.getByRole('button', { name: 'אישור ופרסום' })
+    expect(actions.children).toHaveLength(2)
+    expect(actions.contains(cancel)).toBe(true)
+    expect(actions.contains(confirm)).toBe(true)
+  })
+
+  it('cancels from the visible action without publishing', () => {
+    renderAction()
+    fireEvent.click(screen.getByRole('button', { name: 'פרסום באינסטגרם' }))
+    expect(document.documentElement.style.overflow).toBe('hidden')
+    expect(document.body.style.overflow).toBe('hidden')
+    fireEvent.click(screen.getByRole('button', { name: 'ביטול' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.documentElement.classList.contains('instagram-confirmation-open')).toBe(false)
+    expect(document.documentElement.style.overflow).toBe('')
+    expect(document.body.style.overflow).toBe('')
+    expect(publishContentToInstagram).not.toHaveBeenCalled()
+  })
+
   it('shows loading state and prevents duplicate requests', async () => {
     let resolveRequest
     publishContentToInstagram.mockReturnValue(new Promise((resolve) => { resolveRequest = resolve }))
