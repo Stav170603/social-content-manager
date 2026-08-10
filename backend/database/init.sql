@@ -8,7 +8,7 @@ USE social_content_manager;
 CREATE TABLE users (
                        user_id INT AUTO_INCREMENT PRIMARY KEY,
                        full_name VARCHAR(100) NOT NULL,
-                       email VARCHAR(150) NOT NULL UNIQUE,
+                       email VARCHAR(150) NULL UNIQUE,
                        username VARCHAR(100) NOT NULL UNIQUE,
                        password VARCHAR(255) NOT NULL,
                        role ENUM('ADMIN', 'CLIENT') NOT NULL,
@@ -50,6 +50,7 @@ CREATE TABLE contents (
                           content_type ENUM('IMAGE', 'VIDEO', 'TEXT') NOT NULL,
                           status ENUM('DRAFT', 'WAITING_APPROVAL', 'APPROVED', 'REJECTED', 'PUBLISHED') DEFAULT 'DRAFT',
                           planned_publish_date DATETIME,
+                          feed_order INT NULL,
                           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 
                           FOREIGN KEY (client_id) REFERENCES clients(client_id)

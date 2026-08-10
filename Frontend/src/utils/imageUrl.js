@@ -28,6 +28,25 @@ export function getMediaType(path, declaredType = '') {
   return path ? 'file' : 'none'
 }
 
+export function getVideoPosterUrl(path, thumbnailUrl) {
+  if (thumbnailUrl) return getImageUrl(thumbnailUrl)
+  if (!path) return undefined
+  try {
+    const url = new URL(getImageUrl(path))
+    if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'res.cloudinary.com') return undefined
+    const marker = '/video/upload/'
+    const markerIndex = url.pathname.indexOf(marker)
+    if (markerIndex < 0 || !/\.(mp4|mov|m4v|webm)$/i.test(url.pathname)) return undefined
+    const prefix = url.pathname.slice(0, markerIndex + marker.length)
+    const asset = url.pathname.slice(markerIndex + marker.length).replace(/\.(mp4|mov|m4v|webm)$/i, '.jpg')
+    if (asset.startsWith('s--')) return undefined
+    url.pathname = `${prefix}so_0.5,q_auto/${asset}`
+    return url.toString()
+  } catch {
+    return undefined
+  }
+}
+
 export function getFileName(path) {
   const cleanPath = String(path || '').split(/[?#]/)[0]
   try {

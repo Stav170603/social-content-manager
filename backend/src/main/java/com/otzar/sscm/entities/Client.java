@@ -11,6 +11,7 @@ public class Client {
     private String phone;
     private String instagramUsername;
     private boolean archived;
+    private String email;
 
     // getters & setters
     public Long getClient_id() { return client_id; }
@@ -33,4 +34,6 @@ public class Client {
 
     public boolean isArchived() { return archived; }
     public void setArchived(boolean archived) { this.archived = archived; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
 }

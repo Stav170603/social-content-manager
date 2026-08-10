@@ -33,4 +33,17 @@ describe('MediaPreview video playback', () => {
     expect(screen.getByText('לא ניתן לטעון את הווידאו')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'פתיחת הקובץ' }).getAttribute('href')).toContain('missing.mp4')
   })
+
+  it('derives a lightweight Cloudinary frame when no saved thumbnail exists', () => {
+    const { container } = render(<MediaPreview path="https://res.cloudinary.com/demo/video/upload/v123/sscm/reel.mp4" type="VIDEO" />)
+    expect(container.querySelector('video')?.getAttribute('poster')).toBe('https://res.cloudinary.com/demo/video/upload/so_0.5,q_auto/v123/sscm/reel.jpg')
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('keeps a non-Cloudinary video playable when no poster can be derived', () => {
+    const { container } = render(<MediaPreview path="https://cdn.example/video.mp4" type="VIDEO" />)
+    const video = container.querySelector('video')
+    expect(video?.hasAttribute('poster')).toBe(false)
+    expect(video?.controls).toBe(true)
+  })
 })

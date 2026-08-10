@@ -156,7 +156,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
   })
 
   const [clientSearch, setClientSearch] = useState('')
-  const [clientValidation, setClientValidation] = useState({ phone: '', instagramUsername: '' })
+  const [clientValidation, setClientValidation] = useState({ email: '', phone: '', instagramUsername: '' })
   const [clientView, setClientView] = useState('active')
   const [commentSearch, setCommentSearch] = useState('')
   const [dashboardClientId, setDashboardClientId] = useState('')
@@ -579,7 +579,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
       ...current,
       [name]: name === 'adminId' && value !== '' ? Number(value) : value,
     }))
-    if (name === 'phone' || name === 'instagramUsername') {
+    if (name === 'email' || name === 'phone' || name === 'instagramUsername') {
       setClientValidation((current) => ({ ...current, [name]: '' }))
     }
   }
@@ -588,7 +588,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
     event.preventDefault()
     const validation = validateClientFields(clientForm)
     setClientValidation(validation)
-    if (validation.phone || validation.instagramUsername) return
+    if (validation.email || validation.phone || validation.instagramUsername) return
     setSaving((current) => ({ ...current, client: true }))
     setErrors((current) => ({ ...current, clients: '' }))
 
@@ -599,7 +599,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
         instagramUsername: normalizeInstagramUsername(clientForm.instagramUsername) || null,
       })
       setClientForm(emptyClientForm)
-      setClientValidation({ phone: '', instagramUsername: '' })
+      setClientValidation({ email: '', phone: '', instagramUsername: '' })
       setShowCreateForm((current) => ({ ...current, clients: false }))
       await loadClients()
       showNotice('הלקוח נוצר בהצלחה')
@@ -614,12 +614,13 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
   }
 
   function startClientEdit(client) {
-    setClientValidation({ phone: '', instagramUsername: '' })
+    setClientValidation({ email: '', phone: '', instagramUsername: '' })
     setEditingClientId(getClientId(client))
     setClientDraft({
       userId: client.user_id ?? '',
       adminId: client.admin_id ?? '',
       businessName: client.business_name ?? '',
+      email: client.email ?? '',
       phone: client.phone ?? '',
       instagramUsername: client.instagramUsername ?? '',
     })
@@ -632,7 +633,7 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
       ...current,
       [name]: value,
     }))
-    if (name === 'phone' || name === 'instagramUsername') {
+    if (name === 'email' || name === 'phone' || name === 'instagramUsername') {
       setClientValidation((current) => ({ ...current, [name]: '' }))
     }
   }
@@ -640,9 +641,10 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
   async function handleUpdateClient(clientId) {
     const validation = validateClientFields(clientDraft)
     setClientValidation(validation)
-    if (validation.phone || validation.instagramUsername) return
+    if (validation.email || validation.phone || validation.instagramUsername) return
     const payload = {
       businessName: clientDraft.businessName,
+      email: clientDraft.email.trim() || null,
       phone: normalizeIsraeliPhone(clientDraft.phone),
       instagramUsername: normalizeInstagramUsername(clientDraft.instagramUsername) || null,
     }
@@ -1356,6 +1358,17 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
                                 />
                               </label>
                               <label>
+                                אימייל
+                                <input
+                                  name="email"
+                                  type="email"
+                                  value={clientDraft.email}
+                                  onChange={handleClientDraftChange}
+                                  aria-invalid={Boolean(clientValidation.email)}
+                                />
+                                {clientValidation.email && <span className="field-error">{clientValidation.email}</span>}
+                              </label>
+                              <label>
                                 טלפון
                                 <input
                                   name="phone"
@@ -1513,8 +1526,9 @@ function DashboardPage({ activeRoute, routes, onNavigate, isAuthenticated, onLog
                         type="email"
                         value={clientForm.email}
                         onChange={handleClientFormChange}
-                        required
+                        aria-invalid={Boolean(clientValidation.email)}
                       />
+                      {clientValidation.email && <span className="field-error">{clientValidation.email}</span>}
                     </label>
                     <label>
                       שם משתמש

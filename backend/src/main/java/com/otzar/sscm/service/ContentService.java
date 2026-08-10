@@ -406,6 +406,26 @@ public class ContentService {
         }
     }
 
+    @Transactional
+    public void setFeedOrder(List<Content> authorizedEligible, List<Long> orderedIds) {
+        java.util.Map<Long, Content> byId = authorizedEligible.stream()
+                .collect(java.util.stream.Collectors.toMap(Content::getContent_id, value -> value));
+        for (int index = 0; index < orderedIds.size(); index++) {
+            Content content = byId.get(orderedIds.get(index));
+            if (content == null) throw new IllegalArgumentException("Invalid feed content order");
+            content.setFeedOrder(index);
+            contentRepository.save(content);
+        }
+    }
+
+    @Transactional
+    public void resetFeedOrder(List<Content> authorizedEligible) {
+        for (Content content : authorizedEligible) {
+            content.setFeedOrder(null);
+            contentRepository.save(content);
+        }
+    }
+
     private Content copyComparableContent(Content source) {
         Content copy = new Content();
         copy.setContent_id(source.getContent_id());

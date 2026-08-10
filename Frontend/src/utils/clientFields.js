@@ -23,8 +23,14 @@ export function isValidInstagramUsername(value) {
   return !normalized || /^[A-Za-z0-9._]{1,30}$/.test(normalized)
 }
 
-export function validateClientFields({ phone, instagramUsername }) {
+export function isValidOptionalEmail(value = '') {
+  const normalized = String(value).trim()
+  return !normalized || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)
+}
+
+export function validateClientFields({ phone, instagramUsername, email }) {
   return {
+    email: isValidOptionalEmail(email) ? '' : 'יש להזין כתובת אימייל תקינה',
     phone: isValidIsraeliPhone(phone) ? '' : PHONE_ERROR,
     instagramUsername: isValidInstagramUsername(instagramUsername) ? '' : INSTAGRAM_ERROR,
   }

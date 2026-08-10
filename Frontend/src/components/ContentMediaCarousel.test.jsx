@@ -32,3 +32,14 @@ it('uses a saved video cover as the playback poster',()=>{
   render(<ContentMediaCarousel media={[{mediaUrl:'https://cdn.example/video.mp4',mediaType:'VIDEO',thumbnailUrl:'https://cdn.example/cover.jpg'}]} />)
   expect(document.querySelector('video')?.getAttribute('poster')).toContain('cover.jpg')
 })
+
+it('keeps a distinct generated poster for each Cloudinary carousel video',()=>{
+  cleanup()
+  render(<ContentMediaCarousel media={[
+    {mediaId:11,mediaUrl:'https://res.cloudinary.com/demo/video/upload/first.mp4',mediaType:'VIDEO'},
+    {mediaId:12,mediaUrl:'https://res.cloudinary.com/demo/video/upload/second.mp4',mediaType:'VIDEO'},
+  ]} />)
+  expect(document.querySelector('video')?.getAttribute('poster')).toContain('/first.jpg')
+  fireEvent.click(screen.getByRole('button',{name:/הבאה/}))
+  expect(document.querySelector('video')?.getAttribute('poster')).toContain('/second.jpg')
+})

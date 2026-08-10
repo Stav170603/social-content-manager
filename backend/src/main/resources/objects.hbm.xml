@@ -7,7 +7,7 @@
             <generator class="identity"/>
         </id>
         <property name="full_name" column="full_name" type="string" not-null="true"/>
-        <property name="email" column="email" type="string" not-null="true"/>
+        <property name="email" column="email" type="string"/>
         <property name="username" column="username" type="string" not-null="true"/>
         <property name="password" column="password" type="string" not-null="true"/>
         <property name="role" column="role" type="string" not-null="true"/>
@@ -37,6 +37,7 @@
         <property name="content_type" column="content_type" type="string"/>
         <property name="plannedPublishDate" column="planned_publish_date" type="java.time.LocalDateTime"/>
         <property name="createdAt" column="created_at" type="java.time.LocalDateTime" insert="false" update="false"/>
+        <property name="feedOrder" column="feed_order" type="integer"/>
         <property name="status" column="status" not-null="true">
             <type name="org.hibernate.type.EnumType">
                 <param name="enumClass">com.otzar.sscm.entities.ContentStatus</param>

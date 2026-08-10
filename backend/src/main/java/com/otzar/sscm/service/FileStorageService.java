@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.ArrayList;
 import com.otzar.sscm.models.VideoEditSpec;
 import com.otzar.sscm.models.NormalizedVideoResult;
+import com.otzar.sscm.models.TemporaryAudioResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -158,6 +159,19 @@ public class FileStorageService {
     public void deleteTemporaryVideo(String publicId) throws IOException {
         cloudinaryStorageClient.deleteTemporaryVideo(publicId);
     }
+
+    public TemporaryAudioResult uploadTemporaryAudio(MultipartFile file) throws IOException {
+        if (file == null || file.isEmpty() || file.getSize() > 50L * 1024 * 1024) throw new IllegalArgumentException("קובץ האודיו ריק או גדול מדי");
+        String name = StringUtils.cleanPath(file.getOriginalFilename() == null ? "" : file.getOriginalFilename());
+        String extension = getExtension(name);
+        String mime = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
+        if (!Set.of("mp3", "m4a", "aac", "wav", "ogg", "flac", "aiff").contains(extension) || !mime.startsWith("audio/"))
+            throw new IllegalArgumentException("פורמט האודיו אינו נתמך");
+        if (!cloudinaryStorageClient.isConfigured()) throw new IllegalStateException("עיבוד מוזיקה אינו זמין");
+        return cloudinaryStorageClient.uploadTemporaryAudio(file.getBytes());
+    }
+
+    public void deleteTemporaryAudio(String publicId) throws IOException { cloudinaryStorageClient.deleteTemporaryAudio(publicId); }
 
     private void validateVideoFile(MultipartFile file) {
         if (file == null || file.isEmpty()) throw new IllegalArgumentException("Video file is required");

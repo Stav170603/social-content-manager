@@ -6,6 +6,7 @@ import com.cloudinary.utils.ObjectUtils;
 import com.otzar.sscm.models.VideoEditSpec;
 import com.otzar.sscm.models.NormalizedVideoResult;
 import com.otzar.sscm.models.VideoNormalizationException;
+import com.otzar.sscm.models.TemporaryAudioResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -69,6 +70,28 @@ public class CloudinaryStorageClientImpl implements CloudinaryStorageClient {
     }
 
     @Override
+    public TemporaryAudioResult uploadTemporaryAudio(byte[] bytes) throws IOException {
+        if (!configured) throw new IllegalStateException("Cloudinary audio processing is not configured");
+        Map<?, ?> result = cloudinary.uploader().upload(bytes, ObjectUtils.asMap(
+                "resource_type", "video", "folder", "sscm-temporary/audio", "unique_filename", true, "use_filename", false));
+        String publicId = requiredResult(result, "public_id");
+        Object duration = result.get("duration");
+        if (!(duration instanceof Number) || ((Number) duration).doubleValue() <= 0) {
+            try { deleteTemporaryAudio(publicId); } catch (IOException ignored) { }
+            throw new IOException("Cloudinary returned invalid audio metadata");
+        }
+        return new TemporaryAudioResult(publicId, ((Number) duration).doubleValue());
+    }
+
+    @Override
+    public void deleteTemporaryAudio(String publicId) throws IOException {
+        if (publicId == null || !publicId.startsWith("sscm-temporary/audio/")) throw new IllegalArgumentException("Invalid temporary audio identifier");
+        if (!configured) throw new IllegalStateException("Cloudinary audio processing is not configured");
+        try { cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", "video", "invalidate", true)); }
+        catch (RuntimeException exception) { throw new IOException("Could not delete temporary audio", exception); }
+    }
+
+    @Override
     public NormalizedVideoResult normalizeVideo(byte[] bytes) throws IOException {
         if (!configured) throw new IllegalStateException("Cloudinary video normalization is not configured");
         logger.info("Video normalization upload: bytes={}, configured={}, resourceType=video, folder=sscm-temporary, optionKeys={}",
@@ -117,8 +140,19 @@ public class CloudinaryStorageClientImpl implements CloudinaryStorageClient {
         StringBuilder timing = new StringBuilder();
         if (edit.getStart() != null && edit.getStart() > 0) timing.append("so_").append(decimal(edit.getStart()));
         if (edit.getEnd() != null) appendTransformation(timing, "eo_" + decimal(edit.getEnd()));
-        if (edit.isMuted()) appendTransformation(timing, "ac_none");
+        if (edit.isMuted() || edit.getOriginalVolume() == 0) appendTransformation(timing, "ac_none");
         if (timing.length() > 0) chain.add(timing.toString());
+        if (!edit.isMuted() && edit.getOriginalVolume() != 100) chain.add("e_volume:" + edit.getOriginalVolume());
+        if (edit.getMusicPublicId() != null) {
+            double editedDuration = edit.getEnd() == null ? 0 : edit.getEnd() - (edit.getStart() == null ? 0 : edit.getStart());
+            String layerId = edit.getMusicPublicId().replace('/', ':');
+            StringBuilder layer = new StringBuilder("l_audio:").append(layerId);
+            if (edit.getMusicStart() != null && edit.getMusicStart() > 0) layer.append("/so_").append(decimal(edit.getMusicStart()));
+            if (editedDuration > 0) layer.append(",du_").append(decimal(editedDuration));
+            if (edit.getMusicVolume() != 100) layer.append("/e_volume:").append(edit.getMusicVolume());
+            layer.append("/fl_layer_apply");
+            chain.add(layer.toString());
+        }
         String crop = cropTransformation(edit.getAspectRatio());
         if (crop != null) chain.add(crop);
         int rotation = Math.floorMod(edit.getRotation(), 360);
@@ -127,6 +161,10 @@ public class CloudinaryStorageClientImpl implements CloudinaryStorageClient {
         if (edit.getContrast() != 0) chain.add("e_contrast:" + edit.getContrast());
         if (edit.getSaturation() != 0) chain.add("e_saturation:" + edit.getSaturation());
         if (edit.getVignette() != 0) chain.add("e_vignette:" + edit.getVignette());
+        if (edit.getMusicPublicId() != null) {
+            chain.add("vc_h264,ac_aac");
+            chain.add("f_mp4");
+        }
         return String.join("/", chain);
     }
 

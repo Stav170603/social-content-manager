@@ -18,4 +18,10 @@ public final class ClientFieldNormalizer {
         if (normalized.isEmpty()) return null;
         return normalized.startsWith("@") ? normalized.substring(1) : normalized;
     }
+
+    public static String normalizeEmail(String value) {
+        if (value == null) return null;
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
 }

@@ -1861,6 +1861,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .video-editor-controls input[type="range"] { width: 100%; accent-color: #9a7448; }
 .video-editor-controls output { color: var(--text-soft); font-size: .75rem; }
 .video-editor-mute { grid-template-columns: auto 1fr !important; }
+.video-editor-music-panel { display: grid; min-width: 0; gap: 9px; }
+.video-editor-music-picker { display: inline-flex !important; grid-template-columns: none !important; width: max-content; padding: 8px 12px; border: 1px solid #dfd2c3; border-radius: 10px; background: #f8f1e7; cursor: pointer; }
+.video-editor-music-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.video-editor-music-file { display: grid; grid-template-columns: minmax(0,1fr) auto auto auto; align-items: center; gap: 8px; min-width: 0; }
+.video-editor-music-file > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.video-editor-music-file button { padding: 5px 7px; border: 1px solid #dfd2c3; border-radius: 8px; background: #fffaf2; }
+.video-editor-copyright { color: var(--text-soft); line-height: 1.4; }
 .video-editor-adjustment { display: grid; gap: 12px; padding: 5px 8px; }
 .video-editor-adjustment > div { display: grid; grid-template-columns: 1fr 50px 1fr; align-items: center; }
 .video-editor-adjustment output { justify-self: center; color: var(--primary-dark); font-weight: 800; }
@@ -3393,7 +3400,9 @@ input[type="datetime-local"],
 .feed-header { margin-bottom: 10px; }
 .feed-header h2 { margin: 2px 0 0; font-size: clamp(1.55rem, 3vw, 2.2rem); }
 .feed-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; width: 100%; direction: ltr; }
-.feed-tile { position: relative; display: block; width: 100%; aspect-ratio: 1 / 1; overflow: hidden; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; cursor: pointer; color: white; }
+.feed-order-actions { display: flex; justify-content: flex-start; padding: 0 0 8px; direction: rtl; }
+.feed-order-actions button { font-size: .75rem; }
+.feed-tile { position: relative; display: block; width: 100%; aspect-ratio: 1 / 1; overflow: hidden; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; cursor: pointer; color: white; direction: rtl; }
 .feed-tile img,.feed-tile video { width: 100%; height: 100%; display: block; object-fit: cover; }
 .feed-tile:focus-visible { outline: 3px solid var(--primary); outline-offset: -3px; }
 .feed-overlay-icons { position: absolute; inset: 7px 7px auto auto; display: flex; gap: 5px; filter: drop-shadow(0 1px 3px rgba(0,0,0,.78)); }

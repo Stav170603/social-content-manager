@@ -24,6 +24,7 @@ import com.otzar.sscm.service.ContentService.ContentOperationResult;
 import com.otzar.sscm.service.ContentService.RestoreContentVersionResult;
 import com.otzar.sscm.models.RejectContentRequest;
 import com.otzar.sscm.models.UpdateScheduleRequest;
+import com.otzar.sscm.models.FeedOrderRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -363,6 +364,37 @@ public class ContentController {
         return ResponseEntity.ok(result.getContent());
     }
 
+    @PutMapping("/feed-order")
+    public ResponseEntity<?> updateFeedOrder(@Valid @RequestBody FeedOrderRequest request,
+                                             @CookieValue(value = "token", required = false) String token) {
+        Optional<User> currentUser = authService.findUserByToken(token);
+        if (currentUser.isEmpty()) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        List<Content> eligible = authorizedFeedContents(currentUser.get());
+        List<Long> ids = request.getContentIds();
+        if (ids == null || ids.size() != new java.util.HashSet<>(ids).size()
+                || ids.size() != eligible.size()
+                || !new java.util.HashSet<>(ids).equals(eligible.stream().map(Content::getContent_id).collect(java.util.stream.Collectors.toSet()))) {
+            return ResponseEntity.badRequest().body(new ApiResponse(false, "Invalid feed content order"));
+        }
+        contentService.setFeedOrder(eligible, ids);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/feed-order")
+    public ResponseEntity<?> resetFeedOrder(@CookieValue(value = "token", required = false) String token) {
+        Optional<User> currentUser = authService.findUserByToken(token);
+        if (currentUser.isEmpty()) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        contentService.resetFeedOrder(authorizedFeedContents(currentUser.get()));
+        return ResponseEntity.noContent().build();
+    }
+
+    private List<Content> authorizedFeedContents(User user) {
+        List<Content> authorized = authService.isAdmin(user) ? contentService.findAll()
+                : authService.findClientIdForUser(user).map(contentService::findByClientId).orElseGet(Collections::emptyList);
+        return authorized.stream().filter(content -> content.getStatus() == ContentStatus.APPROVED
+                || content.getStatus() == ContentStatus.WAITING_APPROVAL).collect(java.util.stream.Collectors.toList());
+    }
+
     @PostMapping(value = "/normalize-video", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> normalizeVideo(@RequestParam("file") MultipartFile file,
                                             @CookieValue(value = "token", required = false) String token) {
@@ -453,7 +485,33 @@ public class ContentController {
             }
         }
 
-        List<String> urls = fileStorageService.storeAll(files, indexedEdits);
+        if (request.getMusicFiles().size() != request.getMusicMediaIndexes().size())
+            throw new IllegalArgumentException("קובצי המוזיקה והפריטים אינם תואמים");
+        List<String> temporaryAudioIds = new ArrayList<>();
+        for (int musicIndex = 0; musicIndex < request.getMusicFiles().size(); musicIndex++) {
+            int mediaIndex = request.getMusicMediaIndexes().get(musicIndex);
+            if (mediaIndex < 0 || mediaIndex >= files.size() || !isVideoFile(files.get(mediaIndex)))
+                throw new IllegalArgumentException("מוזיקה יכולה להשתייך רק לסרטון");
+            VideoEditSpec edit = indexedEdits.get(mediaIndex);
+            if (edit == null) { edit = new VideoEditSpec(); edit.setIndex(mediaIndex); indexedEdits.set(mediaIndex, edit); }
+            com.otzar.sscm.models.TemporaryAudioResult audio = fileStorageService.uploadTemporaryAudio(request.getMusicFiles().get(musicIndex));
+            temporaryAudioIds.add(audio.publicId());
+            double start = edit.getMusicStart() == null ? 0 : edit.getMusicStart();
+            double videoDuration = edit.getEnd() == null ? 0 : edit.getEnd() - (edit.getStart() == null ? 0 : edit.getStart());
+            if (videoDuration <= 0 || start + videoDuration > audio.duration() + 0.05) {
+                try { fileStorageService.deleteTemporaryAudio(audio.publicId()); } catch (IOException ignored) { }
+                throw new IllegalArgumentException("אין מספיק אודיו מנקודת ההתחלה שנבחרה");
+            }
+            edit.setMusicPublicId(audio.publicId());
+        }
+
+        List<String> urls;
+        try { urls = fileStorageService.storeAll(files, indexedEdits); }
+        catch (IOException | RuntimeException exception) { throw exception; }
+        for (String publicId : temporaryAudioIds) {
+            try { fileStorageService.deleteTemporaryAudio(publicId); }
+            catch (IOException exception) { logger.warn("Temporary audio cleanup failed after successful processing: {}", publicId); }
+        }
         Map<Integer, String> covers = new HashMap<>();
         if (request.getCoverFiles().size() != request.getCoverMediaIndexes().size()) {
             throw new IllegalArgumentException("Video cover files and indexes must match");

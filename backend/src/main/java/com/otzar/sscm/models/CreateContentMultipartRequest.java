@@ -25,6 +25,8 @@ public class CreateContentMultipartRequest {
     private List<MultipartFile> coverFiles = new ArrayList<>();
     private List<Integer> coverMediaIndexes = new ArrayList<>();
     private String videoEditsJson;
+    private List<MultipartFile> musicFiles = new ArrayList<>();
+    private List<Integer> musicMediaIndexes = new ArrayList<>();
 
     public Long getClientId() {
         return clientId;
@@ -81,4 +83,6 @@ public class CreateContentMultipartRequest {
     public List<MultipartFile> getCoverFiles(){return coverFiles;} public void setCoverFiles(List<MultipartFile> value){coverFiles=value==null?new ArrayList<>():value;}
     public List<Integer> getCoverMediaIndexes(){return coverMediaIndexes;} public void setCoverMediaIndexes(List<Integer> value){coverMediaIndexes=value==null?new ArrayList<>():value;}
     public String getVideoEditsJson(){return videoEditsJson;} public void setVideoEditsJson(String value){videoEditsJson=value;}
+    public List<MultipartFile> getMusicFiles(){return musicFiles;} public void setMusicFiles(List<MultipartFile> value){musicFiles=value==null?new ArrayList<>():value;}
+    public List<Integer> getMusicMediaIndexes(){return musicMediaIndexes;} public void setMusicMediaIndexes(List<Integer> value){musicMediaIndexes=value==null?new ArrayList<>():value;}
 }

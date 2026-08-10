@@ -1,6 +1,7 @@
 package com.otzar.sscm.models;
 
 import javax.validation.constraints.Pattern;
+import javax.validation.constraints.Email;
 import com.otzar.sscm.validation.ClientFieldNormalizer;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
@@ -16,6 +17,9 @@ public class UpdateClientRequest {
     @Pattern(regexp = "^[A-Za-z0-9._]{1,30}$", message = "יש להזין שם משתמש Instagram תקין")
     private String instagramUsername;
     private boolean instagramUsernameProvided;
+    @Email(message = "Email must be valid")
+    private String email;
+    private boolean emailProvided;
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
@@ -38,4 +42,8 @@ public class UpdateClientRequest {
     }
     @JsonIgnore
     public boolean isInstagramUsernameProvided() { return instagramUsernameProvided; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.emailProvided = true; this.email = ClientFieldNormalizer.normalizeEmail(email); }
+    @JsonIgnore
+    public boolean isEmailProvided() { return emailProvided; }
 }

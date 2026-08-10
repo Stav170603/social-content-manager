@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isValidInstagramUsername,
   isValidIsraeliPhone,
+  isValidOptionalEmail,
   normalizeInstagramUsername,
   normalizeIsraeliPhone,
 } from './clientFields.js'
@@ -28,5 +29,13 @@ describe('client field normalization', () => {
 
   it.each(['name with space', '@@social', 'name!', 'a'.repeat(31)])('rejects Instagram username %s', (username) => {
     expect(isValidInstagramUsername(username)).toBe(false)
+  })
+
+  it.each(['', '   ', 'client@example.com'])('accepts optional email %s', (email) => {
+    expect(isValidOptionalEmail(email)).toBe(true)
+  })
+
+  it('rejects a non-empty malformed email', () => {
+    expect(isValidOptionalEmail('not-an-email')).toBe(false)
   })
 })

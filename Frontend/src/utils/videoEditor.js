@@ -59,6 +59,10 @@ export function appendVideoEdits(form, files, editsByFile) {
       form.append('coverFiles', saved.coverFile)
       form.append('coverMediaIndexes', String(index))
     }
+    if (saved.musicFile) {
+      form.append('musicFiles', saved.musicFile)
+      form.append('musicMediaIndexes', String(index))
+    }
   })
   if (edits.length) form.append('videoEditsJson', JSON.stringify(edits))
 }

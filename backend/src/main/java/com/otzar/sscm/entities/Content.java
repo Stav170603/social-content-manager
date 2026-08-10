@@ -23,6 +23,7 @@ public class Content {
     private ContentStatus status;
     private LocalDateTime plannedPublishDate;
     private LocalDateTime createdAt;
+    private Integer feedOrder;
     private List<ContentMedia> media = new ArrayList<>();
     private boolean mediaProvided;
 
@@ -65,6 +66,8 @@ public class Content {
     public void setPlannedPublishDate(LocalDateTime plannedPublishDate) { this.plannedPublishDate = plannedPublishDate; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public Integer getFeedOrder() { return feedOrder; }
+    public void setFeedOrder(Integer feedOrder) { this.feedOrder = feedOrder; }
     public List<ContentMedia> getMedia() { return media; }
     public void setMedia(List<ContentMedia> media) { this.media = media == null ? new ArrayList<>() : media; this.mediaProvided = true; }
     @JsonIgnore public boolean isMediaProvided() { return mediaProvided; }

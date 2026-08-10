@@ -8,6 +8,7 @@ import com.otzar.sscm.entities.ContentStatus;
 import com.otzar.sscm.repository.ClientRepository;
 import com.otzar.sscm.repository.CommentRepository;
 import com.otzar.sscm.repository.ContentRepository;
+import com.otzar.sscm.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +37,7 @@ class ValidationIntegrationTests {
     @Autowired private ClientRepository clientRepository;
     @Autowired private ContentRepository contentRepository;
     @Autowired private CommentRepository commentRepository;
+    @Autowired private UserRepository userRepository;
 
     private Cookie adminCookie;
     private Cookie clientCookie;
@@ -139,6 +141,27 @@ class ValidationIntegrationTests {
                         .content(clientJson("Valid Business", "valid@example.com")))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.business_name").value("Valid Business"));
+    }
+
+    @Test
+    void clientEmailIsOptionalAndCanBeCleared() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String createJson = "{\"businessName\":\"No Email\",\"fullName\":\"Client Name\",\"email\":\"   \",\"username\":\"user-" + suffix
+                + "\",\"password\":\"password\",\"phone\":\"0501234567\"}";
+        String response = mockMvc.perform(post("/clients").cookie(adminCookie).contentType(MediaType.APPLICATION_JSON).content(createJson))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        Client client = objectMapper.readValue(response, Client.class);
+        org.junit.jupiter.api.Assertions.assertNull(userRepository.findById(client.getUser_id()).orElseThrow().getEmail());
+
+        mockMvc.perform(put("/clients/" + client.getClient_id()).cookie(adminCookie).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"valid@example.com\"}"))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertEquals("valid@example.com", userRepository.findById(client.getUser_id()).orElseThrow().getEmail());
+
+        mockMvc.perform(put("/clients/" + client.getClient_id()).cookie(adminCookie).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"\"}"))
+                .andExpect(status().isOk());
+        org.junit.jupiter.api.Assertions.assertNull(userRepository.findById(client.getUser_id()).orElseThrow().getEmail());
     }
 
     @Test

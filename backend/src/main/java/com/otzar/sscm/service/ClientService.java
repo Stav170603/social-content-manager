@@ -6,6 +6,7 @@ import com.otzar.sscm.models.CreateClientRequest;
 import com.otzar.sscm.models.UpdateClientRequest;
 import com.otzar.sscm.repository.ClientRepository;
 import com.otzar.sscm.repository.UserRepository;
+import com.otzar.sscm.validation.ClientFieldNormalizer;
 import org.springframework.stereotype.Service;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,15 +29,15 @@ public class ClientService {
     }
 
     public List<Client> findAll() {
-        return clientRepository.findAll();
+        return enrichEmails(clientRepository.findAll());
     }
 
     public List<Client> findArchived() {
-        return clientRepository.findArchived();
+        return enrichEmails(clientRepository.findArchived());
     }
 
     public Optional<Client> findById(Long id) {
-        return clientRepository.findById(id);
+        return clientRepository.findById(id).map(this::enrichEmail);
     }
 
     public Optional<Client> findByUserId(Long userId) {
@@ -55,7 +56,7 @@ public class ClientService {
     public Client create(CreateClientRequest request) {
         User user = new User();
         user.setFull_name(valueOrFallback(request.getFullName(), request.getBusinessName()));
-        user.setEmail(request.getEmail());
+        user.setEmail(ClientFieldNormalizer.normalizeEmail(request.getEmail()));
         user.setUsername(request.getUsername());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole("CLIENT");
@@ -71,7 +72,9 @@ public class ClientService {
         client.setInstagramUsername(request.getInstagramUsername());
         client.setArchived(false);
 
-        return clientRepository.save(client);
+        Client saved = clientRepository.save(client);
+        saved.setEmail(user.getEmail());
+        return saved;
     }
 
     public Optional<Client> update(Long id, UpdateClientRequest request) {
@@ -104,8 +107,14 @@ public class ClientService {
         if (request.isInstagramUsernameProvided()) {
             client.setInstagramUsername(request.getInstagramUsername());
         }
+        if (request.isEmailProvided()) {
+            userRepository.findById(client.getUser_id()).ifPresent(user -> {
+                user.setEmail(ClientFieldNormalizer.normalizeEmail(request.getEmail()));
+                userRepository.save(user);
+            });
+        }
 
-        return Optional.of(clientRepository.save(client));
+        return Optional.of(enrichEmail(clientRepository.save(client)));
     }
 
     @Transactional
@@ -169,5 +178,15 @@ public class ClientService {
         }
 
         return value;
+    }
+
+    private List<Client> enrichEmails(List<Client> clients) {
+        clients.forEach(this::enrichEmail);
+        return clients;
+    }
+
+    private Client enrichEmail(Client client) {
+        userRepository.findById(client.getUser_id()).ifPresent(user -> client.setEmail(user.getEmail()));
+        return client;
     }
 }

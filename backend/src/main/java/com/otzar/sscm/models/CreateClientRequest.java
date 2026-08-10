@@ -10,7 +10,6 @@ public class CreateClientRequest {
     @NotBlank(message = "Business name is required")
     private String businessName;
     private String fullName;
-    @NotBlank(message = "Email is required")
     @Email(message = "Email must be valid")
     private String email;
     @NotBlank(message = "Username is required")
@@ -31,7 +30,7 @@ public class CreateClientRequest {
     public void setFullName(String fullName) { this.fullName = fullName; }
 
     public String getEmail() { return email; }
-    public void setEmail(String email) { this.email = email; }
+    public void setEmail(String email) { this.email = ClientFieldNormalizer.normalizeEmail(email); }
 
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
