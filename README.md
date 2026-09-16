@@ -1,6 +1,12 @@
 # Smart Social Content Manager
 
-A full stack platform for managing social media content, clients and approval workflows.
+A full stack platform for managing social media content, clients and approval 
+workflows.
+
+## Project Context
+
+Collaborative academic project developed as part of my B.Sc. studies.
+I worked as a Full Stack Developer and contributed to both frontend and backend development.
 
 ## Overview
 
